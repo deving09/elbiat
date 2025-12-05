@@ -1,0 +1,6 @@
+[submodule "external/InternVL"]
+	path = external/InternVL
+	url = https://github.com/OpenGVLab/InternVL.git
+[submodule "external/VLMEvalKit"]
+	path = external/VLMEvalKit
+	url = https://github.com/open-compass/VLMEvalKit.git
