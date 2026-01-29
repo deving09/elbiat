@@ -1,7 +1,10 @@
-from sqlalchemy import String, Integer, Text, Boolean, DateTime
+from sqlalchemy import String, Integer, Text, Boolean, func, DateTime
+from sqlalchemy import ForeignKey
 from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.dialects.postgresql import VARCHAR
+
+from datetime import datetime
 
 
 from .db import Base
@@ -40,8 +43,18 @@ class Convo(Base):
             server_default="true"
             )
 
-    user_id: Mapped[int] = mapped_column(Integer, nullable=False)
+    user_id: Mapped[int] = mapped_column(Integer, 
+        ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True
+    )
 
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        nullable=False,
+        index=True,
+    )
 
 
 class Image(Base):

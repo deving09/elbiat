@@ -1,13 +1,13 @@
-from fastapi import FastAPI, Depends, HTTPException
+from fastapi import FastAPI, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 from .db import SessionLocal
 from . import models
 from sqlalchemy import select, func
-from .schemas import ConvoCreate, ImageCreate
+from .schemas import ConvoCreate, ImageCreate, ImgHashCheck
 from sqlalchemy.exc import IntegrityError
 
 import random
-
+import string
 
 app = FastAPI()
 
@@ -124,11 +124,6 @@ def save_img_info(
     }
 
 
-
-class ImgHashCheck(BaseModel):
-    sha256: Optional[str] = None
-    phash: Optional[str] = None
-    content_length: int
 
 @app.post("/img_hash_check")
 def img_hash_check(

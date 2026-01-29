@@ -21,3 +21,9 @@ class ImageCreate(BaseModel):
     image_url: str
     image_path: str
     content_length: int
+
+
+class ImgHashCheck(BaseModel):
+    sha256: Optional[str] = None
+    phash: Optional[str] = None
+    content_length: int
