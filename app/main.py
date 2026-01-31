@@ -1,15 +1,22 @@
 from fastapi import FastAPI, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
-from .db import SessionLocal
+from .db import SessionLocal, get_db
 from . import models
 from sqlalchemy import select, func
 from .schemas import ConvoCreate, ImageCreate, ImgHashCheck
 from sqlalchemy.exc import IntegrityError
+from app.routes.auth import oauth2_scheme
+from app.auth import decode_token, JWTError
+from app.deps import get_current_user
+
 
 import random
 import string
 
+from app.routes.images import router as images_router
+
 app = FastAPI()
+app.include_router(images_router)
 
 def get_db():
     db = SessionLocal()
@@ -40,11 +47,15 @@ def create_user(email: str, db: Session = Depends(get_db)):
     return {"id": user.id, "email": user.email}
 
 
+
 @app.post("/convos")
 def add_convo(
         convo_in: ConvoCreate,
-        db: Session = Depends(get_db)
+        db: Session = Depends(get_db),
+        current_user = Depends(get_current_user)
     ):
+    user_id = current_user.id
+    convo_in.user_id = user_id
     convo = models.Convo(**convo_in.model_dump())
     db.add(convo)
     db.commit()

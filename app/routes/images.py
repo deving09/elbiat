@@ -7,8 +7,9 @@ from typing import Optional
 
 import requests
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
+from fastapi.responses import FileResponse
 from pydantic import BaseModel, HttpUrl
-from sqlalchemy import select
+from sqlalchemy import select, func
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -19,6 +20,7 @@ import numpy as np
 
 from app import models
 from app.db import get_db
+from app.depends import get_current_user
 
 router = APIRouter(prefix="/images", tags=["images"])
 
@@ -50,9 +52,9 @@ def _ext_from_content_type(content_type: Optional[str]) -> str:
 
 
 def _atomic_write(path: Path, img: Image.Image) -> None:
-    tmp = path.with_suffix(path.suffix + ".tmp")
-    img.save(tmp)
-    os.replace(tmp, path)
+    #tmp = path.with_suffix(path.suffix + ".tmp")
+    img.save(path)
+    #os.replace(tmp, path)
 
 
 
@@ -190,8 +192,11 @@ class IngestUrlRequest(BaseModel):
 # Endpoint 1: ingest from URL
 # ----------------------------
 @router.post("/ingest_url")
-def ingest_url(payload: IngestUrlRequest, db: Session = Depends(get_db)):
+#def ingest_url(payload: IngestUrlRequest, db: Session = Depends(get_db), user=Depends(get_current_user)):
+def ingest_url(payload: IngestUrlRequest, db: Session = Depends(get_db), user=Depends(get_current_user)):
     # Fast path: if exact same URL already exists, return it
+    user_id = user.id
+    
     existing_url = db.execute(
         select(models.Image).where(models.Image.image_url == str(payload.image_url))
     ).scalar_one_or_none()
@@ -232,7 +237,7 @@ def ingest_url(payload: IngestUrlRequest, db: Session = Depends(get_db)):
     path = IMAGES_DIR / filename
 
     # Image conversion and standardization for saving
-    img = Image.Open(BytesIO(data)).convert('RGB')
+    img = Image.open(BytesIO(data)).convert('RGB')
     img = _resize_for_saving(img) 
     
     # Write image to disk
@@ -243,7 +248,7 @@ def ingest_url(payload: IngestUrlRequest, db: Session = Depends(get_db)):
     phash = _compute_phash(img)
     row = _save_image_row(
         db,
-        user_id=payload.user_id,
+        user_id=user_id,
         sha256=sha256,
         phash=phash,
         image_url=str(payload.image_url),
@@ -264,7 +269,9 @@ async def ingest_upload(
     user_id: int = Form(...),
     file: UploadFile = File(...),
     db: Session = Depends(get_db),
+    current_user = Depends(get_current_user)
 ):
+    user_id = current_user.id
     if file.content_type and not file.content_type.startswith("image/"):
         raise HTTPException(status_code=400, detail=f"Not an image: {file.content_type}")
      
@@ -273,7 +280,7 @@ async def ingest_upload(
         raise HTTPException(status_code=400, detail="Empty upload")
 
     content_length = len(data)
-    sha = sha256_bytes(data)
+    sha = _sha256_bytes(data)
 
     # exact dedupe
     existing = db.execute(
@@ -293,7 +300,7 @@ async def ingest_upload(
     path = IMAGES_DIR / filename
 
     # Image conversion and standardization for saving
-    img = Image.Open(BytesIO(data)).convert('RGB')
+    img = Image.open(BytesIO(data)).convert('RGB')
     img = _resize_for_saving(img) 
 
     # Write image to disk
@@ -327,3 +334,20 @@ async def ingest_upload(
         "sha256": row.sha256,
         "original_filename": file.filename,
     }
+
+
+
+@router.get("/{image_id}/file")
+def get_image_file(image_id: int, db: Session = Depends(get_db)):
+    row = db.execute(select(models.Image).where(models.Image.id == image_id)).scalar_one_or_none()
+    if not row:
+        raise HTTPException(status_code=404, detail="image not found")
+    return FileResponse(row.image_path)
+
+
+@router.get("/{image_id}/meta")
+def get_image_meta(image_id: int, db: Session = Depends(get_db)):
+    row = db.execute(select(models.Image).where(models.Image.id == image_id)).scalar_one_or_none()
+    if not row:
+        raise HTTPException(status_code=404, detail="image not found")
+    return {"image_id": row.id, "image_path": row.image_path, "image_url": row.image_url}

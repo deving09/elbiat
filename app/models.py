@@ -14,6 +14,9 @@ class User(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     email: Mapped[str] = mapped_column(String(320), unique=True, index=True)
+    password_hash: Mapped[str] = mapped_column(String, nullable=False)
+    is_active: Mapped[bool] = mapped_column(Boolean, server_default="true", nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
 
 
 
@@ -21,7 +24,13 @@ class Convo(Base):
     __tablename__ = "convos"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    image: Mapped[str] = mapped_column(String, nullable=False) #filename
+
+    image_id: Mapped[int] = mapped_column(
+        Integer,
+        ForeignKey("images.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
 
     conversations: Mapped[list[dict]] = mapped_column(JSONB, nullable=False)
 
@@ -82,7 +91,7 @@ class Image(Base):
     # Where the image came from
     image_url: Mapped[str] = mapped_column(
         VARCHAR,  # unbounded string in Postgres
-        nullable=False,
+        nullable=True,
         index=True,
     )
 
@@ -91,6 +100,12 @@ class Image(Base):
         VARCHAR,
         nullable=False,
         unique=True,
+    )
+
+    user_id: Mapped[int] = mapped_column(Integer, 
+        ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True
     )
 
     # Byte size of downloaded content

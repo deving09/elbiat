@@ -5,7 +5,7 @@ from typing import List, Dict, Optional
 
 class ConvoCreate(BaseModel):
     user_id: int
-    image: str
+    image_id: int
     conversations: List[Dict]
     model_name: str
     model_type: str
