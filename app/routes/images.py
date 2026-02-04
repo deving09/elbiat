@@ -20,7 +20,7 @@ import numpy as np
 
 from app import models
 from app.db import get_db
-from app.depends import get_current_user
+from app.deps import get_current_user
 
 router = APIRouter(prefix="/images", tags=["images"])
 
@@ -184,7 +184,7 @@ def _save_image_row(
 
 
 class IngestUrlRequest(BaseModel):
-    user_id: int
+    #user_id: int
     image_url: HttpUrl
 
 
@@ -266,7 +266,6 @@ def ingest_url(payload: IngestUrlRequest, db: Session = Depends(get_db), user=De
 
 @router.post("/ingest_upload")
 async def ingest_upload(
-    user_id: int = Form(...),
     file: UploadFile = File(...),
     db: Session = Depends(get_db),
     current_user = Depends(get_current_user)

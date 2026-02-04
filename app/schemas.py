@@ -1,10 +1,10 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, EmailStr, Field
 from typing import List, Dict, Optional
 
 
 
 class ConvoCreate(BaseModel):
-    user_id: int
+    #user_id: int
     image_id: int
     conversations: List[Dict]
     model_name: str
@@ -27,3 +27,12 @@ class ImgHashCheck(BaseModel):
     sha256: Optional[str] = None
     phash: Optional[str] = None
     content_length: int
+
+
+class SignupRequest(BaseModel):
+    email: EmailStr
+    password: str = Field(min_length=8, max_length=256)
+
+class SignupResponse(BaseModel):
+    id: int
+    email: EmailStr

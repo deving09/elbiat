@@ -14,9 +14,14 @@ import random
 import string
 
 from app.routes.images import router as images_router
+from app.routes.auth import router as auth_router
 
-app = FastAPI()
+app = FastAPI(
+        docs_url=None, 
+        redoc_url=None,
+        openapi_url=None)
 app.include_router(images_router)
+app.include_router(auth_router)
 
 def get_db():
     db = SessionLocal()
@@ -55,8 +60,11 @@ def add_convo(
         current_user = Depends(get_current_user)
     ):
     user_id = current_user.id
-    convo_in.user_id = user_id
-    convo = models.Convo(**convo_in.model_dump())
+    #convo_in.user_id = user_id
+    convo_dump = convo_in.model_dump()
+    convo_dump["user_id"] = user_id
+    #convo = models.Convo(**convo_in.model_dump())
+    convo = models.Convo(**convo_dump)
     db.add(convo)
     db.commit()
     db.refresh(convo)
