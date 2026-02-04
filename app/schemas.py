@@ -1,6 +1,7 @@
 from pydantic import BaseModel, EmailStr, Field
 from typing import List, Dict, Optional
 
+from .models import EvalStatus
 
 
 class ConvoCreate(BaseModel):
@@ -36,3 +37,26 @@ class SignupRequest(BaseModel):
 class SignupResponse(BaseModel):
     id: int
     email: EmailStr
+
+
+class TaskCreate(BaseModel):
+    name: str
+    vlmeval_data: str
+    description: str
+    primary_metric: str
+
+
+class ModelRegister(BaseModel):
+    name: str
+    vlmeval_model: str
+    default_args: List[Dict]
+
+class CreateEvalRun(BaseModel):
+    task_id: int
+    model_id: int
+    status: EvalStatus
+    metrics: dict
+    artifacts_dir: str
+    command: str
+    git_commit: str
+

@@ -503,8 +503,8 @@ def ensure_ingested_then_chat(
     except Exception as e:
         return None, preview, image_id, history_state, f"❌ {type(e).__name__}: {e}", None, cleared_feedback
 
-def reset_image_state():
-    return None, None, ""
+def reset_image_state(path):
+    return None, None, None,  path, path, ""
 
 # -------------------------
 # UI
@@ -551,11 +551,18 @@ Workflow:
 
             with gr.Row():
                 #user_id = gr.Number(label="user_id", value=1, precision=0)
-                max_new_tokens = gr.Slider(32, 1024, value=256, step=32, label="max_new_tokens", visible=JSON_VISIBLE)
+                max_new_tokens = gr.Slider(32, 1024, value=1024, step=32, label="max_new_tokens", visible=JSON_VISIBLE)
 
             with gr.Row():
                 image_url = gr.Textbox(label="Image URL (optional)", placeholder="https://...")
                 upload = gr.File(label="Upload image (optional)")  # more reliable than gr.Image for multipart
+                
+                with gr.Accordion("View full size", open=False):
+                    full_image = gr.Image(
+                            label="Full image",
+                            height=800,
+                            type="filepath",
+                            )
 
             #ingest_btn = gr.Button("Ingest Image", variant="primary")
 
@@ -576,11 +583,11 @@ Workflow:
             prompt = gr.Textbox(label="Prompt", placeholder="e.g. What is in this image?", lines=4)
             chat_btn = gr.Button("Chat", variant="primary")
 
-            response = gr.Textbox(label="Model response", lines=20)
+            response = gr.Textbox(label="Model response", lines=10, interactive=False, max_lines=50)
             chat_json = gr.JSON(label="Chat response (includes history)", visible=JSON_VISIBLE)
 
             thumbs = gr.Radio(["up", "down", "None"], value="None", label="Quick rating", visible=THUMBS_VISIBLE)
-            feedback_text = gr.Textbox(label="Feedback (optional)", placeholder="What was wrong/right about the answer?", lines=5)
+            feedback_text = gr.Textbox(label="Feedback (optional)", placeholder="What was wrong/right about the answer?", lines=5, max_lines=20)
             task = gr.Textbox(label="Task", value="general_vqa")
 
             save_btn = gr.Button("Save convo + feedback", variant="primary")
@@ -670,8 +677,8 @@ Workflow:
         outputs=[token_state, user_state, auth_view, app_view, header],
     )
 
-    image_url.change(fn=reset_image_state, inputs=[], outputs=[image_id_state, history_state, ingest_status])
-    upload.change(fn=reset_image_state, inputs=[], outputs=[image_id_state, history_state, ingest_status])
+    image_url.change(fn=reset_image_state, inputs=[image_url], outputs=[image_id_state, history_state, upload, preview, full_image, ingest_status])
+    upload.change(fn=reset_image_state, inputs=[upload], outputs=[image_id_state, history_state, image_url,  preview, full_image, ingest_status])
 
     # Chat wiring
     chat_btn.click(

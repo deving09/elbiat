@@ -3,6 +3,9 @@ from sqlalchemy import ForeignKey
 from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.dialects.postgresql import VARCHAR
+from sqlalchemy import Enum, String
+
+
 
 from datetime import datetime
 
@@ -17,6 +20,95 @@ class User(Base):
     password_hash: Mapped[str] = mapped_column(String, nullable=False)
     is_active: Mapped[bool] = mapped_column(Boolean, server_default="true", nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+
+
+class Task(Base):
+    __tablename__ = "tasks"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+
+    name: Mapped[str] = mapped_column(String, unique=True, index=True)
+
+    vlmeval_data: Mapped[str] = mapped_column(String, index=True)
+
+    description: Mapped[str] = mapped_column(String)
+
+    primary_metric: Mapped[str] = mapped_column(String)
+    
+    user_id: Mapped[int] = mapped_column(Integer, 
+        ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True
+    )
+    
+
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        nullable=False,
+        index=True,
+    )
+
+
+
+class Models(Base):
+    __tablename__ = "models"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+
+    name: Mapped[str] = mapped_column(String, unique=True)
+
+    vlmeval_model[str] = mapped_column(String)
+
+    default_args[list[dict]] = mapped_column(JSONB, nullable=False)
+
+
+class EvalStatus(str, enum.Enum):
+    """ Enumeration for evaluation status """
+    QUEUED = "queued"
+    RUNNING = "running"
+    COMPLETE = "completed"
+    FAILED = "failed"
+
+class Evals(Base):
+    __tablename__ = "eval_runs"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    
+    task_id: Mapped[int] = mapped_column(
+        Integer,
+        ForeignKey("tasks.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+ 
+    model_id: Mapped[int] = mapped_column(
+        Integer,
+        ForeignKey("models.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    
+    status: Mapped[EvalStatus] = mapped_column(Enum(EvalStatus), nullable=False, default=EvalStatus.QUEUED)
+
+    metrics : Mapped[dict] = mapped_column(JSONB)
+
+    artifacts_dir: Mapped[str] = mapped_column(String)
+
+    command: Mapped[str] = mapped_column(String)
+
+    git_commit: Mapped[str] = mapped_column(String)
+
+    error: Mapped[str] = mapped_column(Text)
+    
+
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        nullable=False,
+        index=True,
+    )
 
 
 
@@ -62,6 +154,21 @@ class Convo(Base):
         DateTime(timezone=True),
         server_default=func.now(),
         nullable=False,
+        index=True,
+    )
+    
+    started_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=None, #func.now(),
+        nullable=True,
+        index=True,
+    )
+    
+
+    finished_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=None, #func.now(),
+        nullable=True,
         index=True,
     )
 
