@@ -4,7 +4,7 @@ from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.dialects.postgresql import VARCHAR
 from sqlalchemy import Enum, String
-
+import enum
 
 
 from datetime import datetime
@@ -29,13 +29,25 @@ class Task(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
 
     name: Mapped[str] = mapped_column(String, unique=True, index=True)
+    
+    display_name: Mapped[str] = mapped_column(String)
 
     vlmeval_data: Mapped[str] = mapped_column(String, index=True)
 
     description: Mapped[str] = mapped_column(String)
 
     primary_metric: Mapped[str] = mapped_column(String)
-    
+
+    primary_metric_suffix: Mapped[str] = mapped_column(String)
+
+    num_examples: Mapped[int] = mapped_column(Integer, nullable=True)
+
+    paper_url: Mapped[str] = mapped_column(String, nullable=True)
+
+    dataset_url: Mapped[str] = mapped_column(String, nullable=True)
+
+    dataset_version: Mapped[str] = mapped_column(String, nullable=True)
+
     user_id: Mapped[int] = mapped_column(Integer, 
         ForeignKey("users.id", ondelete="CASCADE"),
         nullable=False,
@@ -59,9 +71,13 @@ class Models(Base):
 
     name: Mapped[str] = mapped_column(String, unique=True)
 
-    vlmeval_model[str] = mapped_column(String)
+    display_name: Mapped[str] = mapped_column(String, nullable=True)
 
-    default_args[list[dict]] = mapped_column(JSONB, nullable=False)
+    vlmeval_model: Mapped[str] = mapped_column(String)
+
+    default_args: Mapped[list[dict]] = mapped_column(JSONB, nullable=True)
+
+    model_type: Mapped[str] = mapped_column(String, server_default="vlm")
 
 
 class EvalStatus(str, enum.Enum):
@@ -94,19 +110,34 @@ class Evals(Base):
 
     metrics : Mapped[dict] = mapped_column(JSONB)
 
-    artifacts_dir: Mapped[str] = mapped_column(String)
+    artifacts_dir: Mapped[str] = mapped_column(String, nullable=True)
 
-    command: Mapped[str] = mapped_column(String)
+    command: Mapped[str] = mapped_column(String, nullable=True)
 
-    git_commit: Mapped[str] = mapped_column(String)
+    git_commit: Mapped[str] = mapped_column(String, nullable=True)
 
-    error: Mapped[str] = mapped_column(Text)
+    error: Mapped[str] = mapped_column(Text, nullable=True)
     
 
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         server_default=func.now(),
         nullable=False,
+        index=True,
+    )
+    
+    started_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=None, #func.now(),
+        nullable=True,
+        index=True,
+    )
+    
+
+    finished_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=None, #func.now(),
+        nullable=True,
         index=True,
     )
 
@@ -157,20 +188,6 @@ class Convo(Base):
         index=True,
     )
     
-    started_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True),
-        server_default=None, #func.now(),
-        nullable=True,
-        index=True,
-    )
-    
-
-    finished_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True),
-        server_default=None, #func.now(),
-        nullable=True,
-        index=True,
-    )
 
 
 class Image(Base):

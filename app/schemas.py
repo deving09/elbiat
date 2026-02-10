@@ -3,6 +3,7 @@ from typing import List, Dict, Optional
 
 from .models import EvalStatus
 
+from datetime import datetime
 
 class ConvoCreate(BaseModel):
     #user_id: int
@@ -44,12 +45,31 @@ class TaskCreate(BaseModel):
     vlmeval_data: str
     description: str
     primary_metric: str
+    display_name : Optional[str] = None
+    primary_metric_suffix: Optional[str] = None
+    num_examples: Optional[int] = None
+    paper_url: Optional[str] = None
+    dataset_url: Optional[str] = None
+    dataset_version: Optional[str] = None
+
+class TaskResponse(TaskCreate):
+    id: int
+    created_at: datetime
+
+    #class Config:
+    #    from_attributes = True
 
 
 class ModelRegister(BaseModel):
     name: str
+    display_name : str
     vlmeval_model: str
     default_args: List[Dict]
+    model_type: str = "vlm"
+
+
+class ModelResponse(ModelRegister):
+    id: int
 
 class CreateEvalRun(BaseModel):
     task_id: int
@@ -60,3 +80,21 @@ class CreateEvalRun(BaseModel):
     command: str
     git_commit: str
 
+
+class EvalRunResponse(CreateEvalRun):
+    id: int
+    error: Optional[str]
+    created_at: datetime
+    started_at: Optional[datetime]
+    finished_at: Optional[datetime]
+
+
+
+class LeaderboardEntry(BaseModel):
+    model_name: str
+    model_display_name: str
+    primary_metric: Optional[float]
+    run_id: int
+    run_date: datetime
+    #git_commit: Optional[str] = None
+    status: str
