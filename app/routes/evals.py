@@ -6,12 +6,16 @@ from app.db import get_db
 from app import models
 
 from app.schemas import TaskCreate, ModelRegister, CreateEvalRun, LeaderboardEntry
-from app.schemas import TaskResponse
+from app.schemas import TaskResponse, ModelResponse, EvalRunResponse
+
+from app.models import Task
+
 
 from datetime import datetime
 from typing import Optional, List
 from pydantic import BaseModel
 
+from app.deps import get_current_user
 
 
 
@@ -60,7 +64,9 @@ async def get_task(task_name: str, db: Session = Depends(get_db)):
 
 
 @router.post("/tasks", response_model=TaskResponse, status_code=201)
-async def create_task(task: TaskCreate, db: Session = Depends(get_db)):
+async def create_task(task: TaskCreate, 
+    db: Session = Depends(get_db), 
+    current_user=Depends(get_current_user)):
     """Create a new evaluation task."""
     # Check for duplicate
     existing = db.execute(
@@ -69,8 +75,9 @@ async def create_task(task: TaskCreate, db: Session = Depends(get_db)):
     
     if existing:
         raise HTTPException(status_code=400, detail=f"Task '{task.name}' already exists")
-    
-    db_task = Task(**task.dict())
+     
+
+    db_task = Task(user_id=current_user.id, **task.dict())
     db.add(db_task)
     db.commit()
     db.refresh(db_task)
@@ -109,7 +116,7 @@ async def get_model(model_name: str, db: Session = Depends(get_db)):
 
 
 @router.post("/models", response_model=ModelResponse, status_code=201)
-async def create_model(model: ModelCreate, db: Session = Depends(get_db)):
+async def create_model(model: ModelRegister, db: Session = Depends(get_db)):
     """Create a new model entry."""
     existing = db.execute(
         select(Model).where(Model.name == model.name)
@@ -261,7 +268,7 @@ async def get_leaderboard(
 @router.post("/tasks/{task_name}/runs", response_model=EvalRunResponse, status_code=201)
 async def trigger_eval_run(
     task_name: str,
-    run_request: EvalRunCreate,
+    run_request: CreateEvalRun,
     db: Session = Depends(get_db)
     # current_user = Depends(get_current_user)  # Add auth
 ):

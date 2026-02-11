@@ -88,6 +88,12 @@ class EvalRunResponse(CreateEvalRun):
     started_at: Optional[datetime]
     finished_at: Optional[datetime]
 
+    # Joined fields
+    task_name: Optional[str] = None
+    model_name: Optional[str] = None
+    model_display_name: Optional[str] = None
+    primary_metric: Optional[float] = None
+
 
 
 class LeaderboardEntry(BaseModel):

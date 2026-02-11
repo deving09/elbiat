@@ -156,7 +156,9 @@ curl -X POST http://localhost:8000/api/evals/tasks \
     "display_name": "InfographicVQA",
     "vlmeval_data": "InfoVQA",
     "primary_metric_suffix": "_acc.csv",
-    "primary_metric_key": "acc"
+    "primary_metric": "acc",
+     "description": "VQA dataset to evaluation reasoning over complex infographic images"
+  }
   }'
 ```
 

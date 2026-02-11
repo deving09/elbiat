@@ -15,6 +15,7 @@ import string
 
 from app.routes.images import router as images_router
 from app.routes.auth import router as auth_router
+from app.routes.evals import router as eval_router
 
 app = FastAPI(
         docs_url=None, 
@@ -22,6 +23,7 @@ app = FastAPI(
         openapi_url=None)
 app.include_router(images_router)
 app.include_router(auth_router)
+app.include_router(eval_router)
 
 def get_db():
     db = SessionLocal()
