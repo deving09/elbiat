@@ -38,7 +38,9 @@ async def list_tasks(db: Session = Depends(get_db)):
     # Add run counts
     response = []
     for task in tasks:
-        task_dict = TaskResponse.from_orm(task).dict()
+        #task_dict = TaskResponse.from_orm(task).dict()
+        task_dict = TaskResponse.model_validate(task, from_attributes=True).model_dump()
+
         #count = db.execute(
         #    select(func.count(EvalRun.id)).where(EvalRun.task_id == task.id)
         #).scalar()

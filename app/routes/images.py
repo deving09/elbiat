@@ -8,14 +8,18 @@ from typing import Optional
 import requests
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse
-from pydantic import BaseModel, HttpUrl
+from fastapi import Query
+from pydantic import BaseModel, HttpUrl, ConfigDict
 from sqlalchemy import select, func
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from typing import List, Optional, Literal
+
 from PIL import Image
 from io import BytesIO
 import numpy as np
+from datetime import datetime
 
 
 from app import models
@@ -350,3 +354,65 @@ def get_image_meta(image_id: int, db: Session = Depends(get_db)):
     if not row:
         raise HTTPException(status_code=404, detail="image not found")
     return {"image_id": row.id, "image_path": row.image_path, "image_url": row.image_url}
+
+
+
+class ImageOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    user_id: int
+    is_public: bool
+    created_at: Optional[datetime] = None  # or datetime if you use it
+
+
+@router.get("/me", response_model=list[ImageOut])
+def list_my_images(
+    public: Optional[bool] = Query(default=None, description="If set, filter by visibility"),
+    limit: int = Query(default=50, ge=1, le=200),
+    offset: int = Query(default=0, ge=0),
+    order: Literal["desc", "asc"] = Query(default="desc"),
+    db: Session = Depends(get_db),                 # <- your DB session dependency
+    user=Depends(get_current_user),               # <- your auth dependency
+):
+    q = db.query(models.Image).filter(models.Image.user_id == user.id)
+
+    if public is not None:
+        q = q.filter(models.Image.is_public == public)
+
+    if order == "desc":
+        q = q.order_by(models.Image.created_at.desc())
+    else:
+        q = q.order_by(models.Image.created_at.asc())
+
+    images = q.offset(offset).limit(limit).all()
+    return [ImageOut.model_validate(img) for img in images]
+
+
+class ImageVisibilityUpdate(BaseModel):
+    is_public: bool
+
+
+@router.patch("/{image_id}", response_model=ImageOut)
+def update_image_visibility(
+    image_id: int,
+    payload: ImageVisibilityUpdate,
+    db: Session = Depends(get_db),
+    user=Depends(get_current_user),
+):
+    img = db.query(models.Image).filter(models.Image.id == image_id).first()
+    if not img:
+        raise HTTPException(status_code=404, detail="Image not found")
+
+    # Only the uploader can change visibility
+    if img.user_id != user.id:
+        raise HTTPException(status_code=403, detail="Not allowed to modify this image")
+
+    img.is_public = payload.is_public
+    db.add(img)
+    db.commit()
+    db.refresh(img)
+
+    return ImageOut.model_validate(img)
+
+

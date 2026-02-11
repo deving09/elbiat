@@ -16,14 +16,20 @@ import string
 from app.routes.images import router as images_router
 from app.routes.auth import router as auth_router
 from app.routes.evals import router as eval_router
+from app.routes.chat import router as chat_router  
 
+"""
 app = FastAPI(
         docs_url=None, 
         redoc_url=None,
         openapi_url=None)
+"""
+
+app = FastAPI(docs_url="/docs", redoc_url="/redoc", openapi_url="/openapi.json")
 app.include_router(images_router)
 app.include_router(auth_router)
 app.include_router(eval_router)
+app.include_router(chat_router, prefix="/api")
 
 def get_db():
     db = SessionLocal()

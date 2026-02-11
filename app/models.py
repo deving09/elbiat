@@ -3,6 +3,7 @@ from sqlalchemy import ForeignKey
 from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.dialects.postgresql import VARCHAR
+from sqlalchemy.sql import expression
 from sqlalchemy import Enum, String
 import enum
 
@@ -244,6 +245,14 @@ class Image(Base):
         DateTime(timezone=True),
         server_default=func.now(),
         nullable=False,
+    )
+
+
+    is_public: Mapped[bool] = mapped_column(
+        Boolean,
+        nullable=False,
+        server_default=expression.false(),  # DB-level default
+        default=False,                      # ORM-level default
     )
 
 

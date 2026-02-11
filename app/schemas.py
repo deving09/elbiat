@@ -1,4 +1,4 @@
-from pydantic import BaseModel, EmailStr, Field
+from pydantic import BaseModel, EmailStr, Field, ConfigDict
 from typing import List, Dict, Optional
 
 from .models import EvalStatus
@@ -23,6 +23,15 @@ class ImageCreate(BaseModel):
     image_url: str
     image_path: str
     content_length: int
+
+
+class ImageOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    user_id: int
+    is_public: bool
+    created_at: Optional[str] = None  # or datetime if you use it
 
 
 class ImgHashCheck(BaseModel):
