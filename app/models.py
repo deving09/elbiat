@@ -37,7 +37,19 @@ class Task(Base):
 
     description: Mapped[str] = mapped_column(String)
 
-    primary_metric: Mapped[str] = mapped_column(String)
+    #primary_metric: Mapped[str] = mapped_column(String)
+
+     # 🔁 Renamed
+    primary_metric_type: Mapped[str] = mapped_column(String)
+
+    # ➕ New field
+    primary_metric_key: Mapped[str] = mapped_column(
+        String,
+        nullable=False,
+        default="avg",                     # ORM default
+        server_default="avg",              # DB default
+    )
+
 
     primary_metric_suffix: Mapped[str] = mapped_column(String)
 

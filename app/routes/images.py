@@ -416,3 +416,18 @@ def update_image_visibility(
     return ImageOut.model_validate(img)
 
 
+
+@router.get("/random_public", response_model=ImageOut)
+def get_random_public_image(db: Session = Depends(get_db), user=Depends(get_current_user)):
+    row = db.execute(
+        select(models.Image)
+        .where(models.Image.is_public == True)
+        .order_by(func.random())
+        .limit(1)
+    ).scalar_one_or_none()
+
+    if not row:
+        raise HTTPException(status_code=404, detail="No public images found")
+
+    return ImageOut.model_validate(row)
+

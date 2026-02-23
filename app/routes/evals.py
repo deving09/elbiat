@@ -8,7 +8,7 @@ from app import models
 from app.schemas import TaskCreate, ModelRegister, CreateEvalRun, LeaderboardEntry
 from app.schemas import TaskResponse, ModelResponse, EvalRunResponse
 
-from app.models import Task
+from app.models import Task, Evals, EvalStatus
 
 
 from datetime import datetime
@@ -16,6 +16,9 @@ from typing import Optional, List
 from pydantic import BaseModel
 
 from app.deps import get_current_user
+
+import numpy as np
+import math
 
 
 
@@ -98,7 +101,7 @@ async def create_task(task: TaskCreate,
 async def list_models(db: Session = Depends(get_db)):
     """List all models."""
     result = db.execute(
-        select(Model).order_by(Model.name)
+        select(models.Models).order_by(models.Models.name)
     )
     return result.scalars().all()
 
@@ -107,7 +110,7 @@ async def list_models(db: Session = Depends(get_db)):
 async def get_model(model_name: str, db: Session = Depends(get_db)):
     """Get a specific model by name."""
     result = db.execute(
-        select(Model).where(Model.name == model_name)
+        select(models.Models).where(models.Model.name == model_name)
     )
     model = result.scalar_one_or_none()
     
@@ -121,13 +124,13 @@ async def get_model(model_name: str, db: Session = Depends(get_db)):
 async def create_model(model: ModelRegister, db: Session = Depends(get_db)):
     """Create a new model entry."""
     existing = db.execute(
-        select(Model).where(Model.name == model.name)
+        select(models.Models).where(models.Models.name == model.name)
     ).scalar_one_or_none()
     
     if existing:
         raise HTTPException(status_code=400, detail=f"Model '{model.name}' already exists")
     
-    db_model = Model(**model.dict())
+    db_model = models.Models(**model.dict())
     db.add(db_model)
     db.commit()
     db.refresh(db_model)
@@ -141,6 +144,38 @@ async def create_model(model: ModelRegister, db: Session = Depends(get_db)):
 # Eval Run Endpoints
 # =============================================================================
 
+
+"""
+def get_metric_val(metrics, metric_key):
+
+    metrics = sanitize_metrics(metrics)
+
+    if metric_key == "avg":
+        return np.mean(list(filter( lambda v: isinstance(v, float), metrics.values())))
+    elif metric_key == "min":
+        return np.min(list(filter( lambda v: isinstance(v, float), metrics.values())))
+    elif metric_key == "max":
+        return np.max(list(filter( lambda v: isinstance(v, float), metrics.values())))
+    else:
+        return metrics.get(metric_key) 
+"""
+def get_metric_val(metrics, metric_key):
+    if not metrics:
+        return None
+    if metric_key == "avg":
+        vals = [v for v in metrics.values() if isinstance(v, (int, float)) and not math.isnan(v)]
+        return np.mean(vals) if vals else None
+    elif metric_key == "min":
+        vals = [v for v in metrics.values() if isinstance(v, (int, float)) and not math.isnan(v)]
+        return np.min(vals) if vals else None
+    elif metric_key == "max":
+        vals = [v for v in metrics.values() if isinstance(v, (int, float)) and not math.isnan(v)]
+        return np.max(vals) if vals else None
+    else:
+        val = metrics.get(metric_key)
+        if isinstance(val, float) and math.isnan(val):
+            return None
+        return val
 
 @router.get("/tasks/{task_name}/runs", response_model=List[EvalRunResponse])
 async def list_task_runs(
@@ -161,15 +196,15 @@ async def list_task_runs(
     
     # Build query
     query = (
-        select(EvalRun, Model)
-        .join(Model, EvalRun.model_id == Model.id)
-        .where(EvalRun.task_id == task.id)
+        select(Evals, models.Models)
+        .join(models.Models, Evals.model_id == models.Models.id)
+        .where(Evals.task_id == task.id)
     )
     
     if status:
-        query = query.where(EvalRun.status == status)
+        query = query.where(Evals.status == status)
     
-    query = query.order_by(desc(EvalRun.created_at)).offset(offset).limit(limit)
+    query = query.order_by(Evals.created_at.desc()).offset(offset).limit(limit)
     
     result = db.execute(query)
     rows = result.all()
@@ -192,17 +227,85 @@ async def list_task_runs(
             "task_name": task.name,
             "model_name": model.name,
             "model_display_name": model.display_name,
-            "primary_metric": run.metrics.get(task.primary_metric_key) if run.metrics else None,
+            "primary_metric": get_metric_val(run.metrics, task.primary_metric_key)   
+            #"primary_metric": run.metrics.get(task.primary_metric) if run.metrics else None,
         }
         response.append(EvalRunResponse(**run_dict))
     
     return response
 
 
+def sanitize_metrics(metrics):
+    """Replace NaN/Inf with None for JSON serialization."""
+    if not metrics:
+        return metrics
+    
+    sanitized = {}
+    for key, value in metrics.items():
+        if isinstance(value, (float,  np.floating)) and (math.isnan(value) or math.isinf(value)):
+            sanitized[key] = None
+        elif isinstance(value, dict):
+            sanitized[key] = sanitize_metrics(value)
+        else:
+            sanitized[key] = value
+    return sanitized
+
+
+@router.get("/tasks/{task_name}/metrics", response_model=List[str])
+async def get_available_metrics(
+    task_name: str,
+    db: Session = Depends(get_db)
+):
+    """
+    Get all available metrics for a task by scanning completed runs.
+    """
+    task = db.execute(
+        select(Task).where(Task.name == task_name)
+    ).scalar_one_or_none()
+    
+    if not task:
+        raise HTTPException(status_code=404, detail=f"Task '{task_name}' not found")
+    
+    # Get all unique metric keys from completed runs
+    query = (
+        select(Evals.metrics)
+        .where(Evals.task_id == task.id)
+        .where(Evals.status == "completed")
+        .where(Evals.metrics.isnot(None))
+    )
+    
+    result = db.execute(query)
+    rows = result.scalars().all()
+    
+    # Collect all unique keys
+    all_keys = set()
+    for metrics in rows: 
+        if metrics:
+            metrics = sanitize_metrics(metrics)
+            for key, value in metrics.items():
+                if isinstance(value, (int, float)):
+                    all_keys.add(key)
+
+    # Add aggregate options + primary metric first
+    ordered_metrics = ["avg", "min", "max"]
+    if task.primary_metric_key:
+        ordered_metrics.insert(0, task.primary_metric_key)
+    
+    # Add remaining keys (sorted)
+    for key in sorted(all_keys):
+        if key not in ordered_metrics:
+            ordered_metrics.append(key)
+    
+    return ordered_metrics
+
+
+
+
 
 @router.get("/tasks/{task_name}/leaderboard", response_model=List[LeaderboardEntry])
 async def get_leaderboard(
     task_name: str,
+    metric: str = Query(None, description="Metric to sort by (default: task's primary metric). Use 'avg', 'min', 'max' for aggregates."),
     limit: int = Query(50, le=200),
     db: Session = Depends(get_db)
 ):
@@ -219,12 +322,13 @@ async def get_leaderboard(
     
     # Get completed runs with metrics
     query = (
-        select(EvalRun, Model)
-        .join(Model, EvalRun.model_id == Model.id)
-        .where(EvalRun.task_id == task.id)
-        .where(EvalRun.status == "completed")
-        .where(EvalRun.metrics.isnot(None))
-        .order_by(desc(EvalRun.created_at))
+        select(Evals, models.Models)
+        .join(models.Models, Evals.model_id == models.Models.id)
+        .where(Evals.task_id == task.id)
+        .where(Evals.status == "completed")
+        .where(Evals.metrics.isnot(None))
+        .order_by(Evals.created_at.desc())
+        #.order_by(desc(Evals.created_at))
     )
     
     result = db.execute(query)
@@ -232,11 +336,16 @@ async def get_leaderboard(
     
     # Group by model, keep best result
     best_per_model = {}
-    metric_key = task.primary_metric_key
+
+    metric_key = metric if metric else task.primary_metric_key
+
+
+    #metric_key = task.primary_metric_key
     
     for run, model in rows:
-        metric_val = run.metrics.get(metric_key) if run.metrics else None
-        
+        #metric_val = run.metrics.get(metric_key) if run.metrics else None
+        metrics = sanitize_metrics(run.metrics)
+        metric_val = get_metric_val(metrics, metric_key) 
         if model.name not in best_per_model:
             best_per_model[model.name] = (run, model, metric_val)
         else:
@@ -254,6 +363,7 @@ async def get_leaderboard(
     
     leaderboard = []
     for run, model, metric_val in sorted_entries[:limit]:
+        #print(metric_val)
         leaderboard.append(LeaderboardEntry(
             model_name=model.name,
             model_display_name=model.display_name,
@@ -267,10 +377,14 @@ async def get_leaderboard(
     return leaderboard
 
 
+class TriggerEvalRequest(BaseModel):
+    model_name: str
+
+
 @router.post("/tasks/{task_name}/runs", response_model=EvalRunResponse, status_code=201)
 async def trigger_eval_run(
     task_name: str,
-    run_request: CreateEvalRun,
+    run_request: TriggerEvalRequest,
     db: Session = Depends(get_db)
     # current_user = Depends(get_current_user)  # Add auth
 ):
@@ -288,17 +402,18 @@ async def trigger_eval_run(
     
     # Get model
     model = db.execute(
-        select(Model).where(Model.name == run_request.model_name)
+        select(models.Models).where(models.Models.name == run_request.model_name)
     ).scalar_one_or_none()
     
     if not model:
         raise HTTPException(status_code=404, detail=f"Model '{run_request.model_name}' not found")
     
     # Create the run
-    eval_run = EvalRun(
+    eval_run = Evals(
         task_id=task.id,
         model_id=model.id,
         status=EvalStatus.QUEUED,
+        metrics={},
         #config_snapshot=run_request.config_overrides,
         # created_by_user_id=current_user.id  # Add when you have auth
     )
@@ -323,10 +438,10 @@ async def trigger_eval_run(
 async def get_run(run_id: int, db: Session = Depends(get_db)):
     """Get details of a specific run."""
     result = db.execute(
-        select(EvalRun, Task, Model)
-        .join(Task, EvalRun.task_id == Task.id)
-        .join(Model, EvalRun.model_id == Model.id)
-        .where(EvalRun.id == run_id)
+        select(Evals, Task, models.Models)
+        .join(Task, Evals.task_id == Task.id)
+        .join(models.Models, Evals.model_id == Model.id)
+        .where(Evals.id == run_id)
     )
     row = result.first()
     
@@ -351,6 +466,7 @@ async def get_run(run_id: int, db: Session = Depends(get_db)):
         task_name=task.name,
         model_name=model.name,
         model_display_name=model.display_name,
-        primary_metric=run.metrics.get(task.primary_metric_key) if run.metrics else None
+        primary_metric=get_metric_val(run.metrics, task.primary_metric_key)
+        #primary_metric=run.metrics.get(task.primary_metric) if run.metrics else None
         #duration_seconds=(run.finished_at - run.started_at).total_seconds() if run.started_at and run.finished_at else None
     )

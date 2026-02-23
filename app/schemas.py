@@ -53,7 +53,8 @@ class TaskCreate(BaseModel):
     name: str
     vlmeval_data: str
     description: str
-    primary_metric: str
+    primary_metric_type: str
+    primary_metric_key: str
     display_name : Optional[str] = None
     primary_metric_suffix: Optional[str] = None
     num_examples: Optional[int] = None
@@ -73,7 +74,7 @@ class ModelRegister(BaseModel):
     name: str
     display_name : str
     vlmeval_model: str
-    default_args: List[Dict]
+    default_args: Optional[List[Dict]]
     model_type: str = "vlm"
 
 
@@ -84,18 +85,19 @@ class CreateEvalRun(BaseModel):
     task_id: int
     model_id: int
     status: EvalStatus
-    metrics: dict
-    artifacts_dir: str
-    command: str
-    git_commit: str
+    metrics: Optional[dict] = None
+    artifacts_dir: Optional[str] = None
+    command: Optional[str] = None
+    git_commit: Optional[str] = None
 
 
 class EvalRunResponse(CreateEvalRun):
     id: int
     error: Optional[str]
     created_at: datetime
-    started_at: Optional[datetime]
-    finished_at: Optional[datetime]
+    started_at: Optional[datetime]  = None
+    finished_at: Optional[datetime] = None
+    error: Optional[str] = None         
 
     # Joined fields
     task_name: Optional[str] = None
