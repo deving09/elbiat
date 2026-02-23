@@ -1,9 +1,12 @@
 "use client";
 
 import { useState, useRef, useEffect } from "react";
+import { useSearchParams } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card } from "@/components/ui/card";
+
+//import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
 import { getAccessToken } from "@/lib/api";
 import {
@@ -13,6 +16,7 @@ import {
   User,
   Bot,
   Loader2,
+  Globe,
   ThumbsUp,
   ThumbsDown,
   Save,
@@ -36,6 +40,8 @@ const INGEST_UPLOAD = "/images/ingest_upload";
 const META_IMAGE = (id: number) => `/images/${id}/meta`;
 const CHAT_ENDPOINT = "/api/chat";
 const CONVOS_ENDPOINT = "/convos";
+const RANDOM_PUBLIC_IMAGE = "/images/random_public";
+
 
 
 
@@ -48,18 +54,42 @@ interface Message {
 }
 
 export default function ChatPage() {
+  const searchParams = useSearchParams();
+  const imageIdParam = searchParams.get("imageId");
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [imageUrl, setImageUrl] = useState("");
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [imagePreview, setImagePreview] = useState<string | null>(null);
+
+  const [isPickingRandom, setIsPickingRandom] = useState(false);
+
+
+  // Expanding image sizei
+  //const [expandedSrc, setExpandedSrc] = useState<string | null>(null);
+
+  //const [isImageOpen, setIsImageOpen] = useState(false);
+  const [expandedSrc, setExpandedSrc] = useState<string | null>(null);
+  const [expandedTitle, setExpandedTitle] = useState<string>("Image");
+
+  const openImage = (src: string, title = "Image") => {
+    setExpandedSrc(src);
+    //setExpandedTitle(title);
+    //#setIsImageOpen(true);
+  };
+
+  const closeImage = () => {
+    setExpandedSrc(null);
+  };
   
   // Backend state
   const [imageId, setImageId] = useState<number | null>(null);
   const [historyState, setHistoryState] = useState<any>(null);
   const [lastResponse, setLastResponse] = useState<string>("");
   const [lastPrompt, setLastPrompt] = useState<string>("");
+  const [imageMeta, setImageMeta] = useState<any>(null);
+
   
   // Feedback
   const [feedback, setFeedback] = useState("");
@@ -73,9 +103,83 @@ export default function ChatPage() {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   };
 
+  /*useEffect(() => {
+    if (!imageIdParam) return;
+    const id = Number(imageIdParam);
+    if (!Number.isFinite(id)) return;
+
+    setImageId(id);
+
+    // Optional: fetch meta so you can show filename / visibility / etc.
+    
+  }, [imageIdParam]);
+  */
+
+  const pickRandomPublicImage = async () => {
+    try {
+      setIsPickingRandom(true);
+  
+      const resp = await fetch(RANDOM_PUBLIC_IMAGE, {
+        headers: {
+          ...getAuthHeaders(), // ok even if endpoint is public
+        },
+      });
+  
+      if (!resp.ok) {
+        const err = await resp.text();
+        throw new Error(err || "Failed to fetch random public image");
+      }
+  
+      const img = await resp.json();
+  
+      // Expecting { id, file_url } or at least { id }
+      const id = Number(img.id);
+      if (!Number.isFinite(id)) throw new Error("Bad image payload from server");
+  
+      setImageId(id);
+      setImagePreview(img.file_url ?? `/images/${id}/file`);
+      setSelectedFile(null);
+      setImageUrl("");
+      setHistoryState(null);
+  
+      // Optional: start fresh chat
+      setMessages([]);
+      setLastResponse("");
+      setLastPrompt("");
+      setFeedback("");
+      setThumbs(null);
+      setSaveStatus("");
+    } catch (e) {
+      console.error(e);
+      setMessages((prev) => [
+        ...prev,
+        {
+          id: Date.now().toString(),
+          role: "assistant",
+          content: `❌ ${e instanceof Error ? e.message : "Failed to pick random image"}`,
+        },
+      ]);
+    } finally {
+      setIsPickingRandom(false);
+    }
+  };
+
+
+
   useEffect(() => {
     scrollToBottom();
-  }, [messages]);
+    if (!imageIdParam) return;
+    const id = Number(imageIdParam);
+    if (!Number.isFinite(id)) return;
+
+    setImageId(id);
+    setImagePreview(`/images/${id}/file`);   // so the preview renders
+    setSelectedFile(null);
+    setImageUrl("");
+    // keep historyState if you want continuity; or reset:
+    setHistoryState(null);
+
+  }, [imageIdParam]);
 
   const getAuthHeaders = (): Record<string, string> => {
     const token = getAccessToken();
@@ -344,6 +448,27 @@ export default function ChatPage() {
 
   return (
     <main className="flex flex-col h-[calc(100vh-4rem)]">
+      {imageId && imagePreview && (
+        <div className="border-b bg-muted/30 p-3">
+          <div className="mx-auto max-w-3xl flex items-center gap-3">
+            <img
+              src={imagePreview}
+              className="h-12 w-12 rounded-md object-cover border cursor-zoom-in"
+              onClick={() => openImage(imagePreview, `Image #${imageId}`)}
+              alt={`Image ${imageId}`}
+            />
+            <div className="min-w-0">
+              <div className="text-sm font-medium truncate">
+                Preloaded image #{imageId}
+              </div>
+              <div className="text-xs text-muted-foreground">
+                From gallery (double-click)
+              </div>
+            </div>
+         </div>
+       </div>
+     )}
+
       {/* Messages area */}
       <div className="flex-1 overflow-y-auto p-4">
         <div className="mx-auto max-w-3xl space-y-4">
@@ -381,7 +506,8 @@ export default function ChatPage() {
                     <img
                       src={message.imageUrl}
                       alt="Uploaded"
-                      className="max-w-full max-h-64 rounded-md mb-2"
+                      className="max-w-full max-h-64 rounded-md mb-2 cursor-zoom-in"
+                      onClick={() => openImage(message.imageUrl!, "Message image")}
                     />
                   )}
                   <p className="whitespace-pre-wrap">{message.content}</p>
@@ -483,6 +609,19 @@ export default function ChatPage() {
                 <ImageIcon className="h-4 w-4 mr-2" />
                 Upload
               </Button>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={pickRandomPublicImage}
+                disabled={isLoading || isPickingRandom}
+              >
+                {isPickingRandom ? (
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                ) : (
+                  <Globe className="h-4 w-4 mr-2" />
+                )}
+                Random Public
+            </Button>
             </div>
           )}
 
@@ -492,7 +631,9 @@ export default function ChatPage() {
               <img
                 src={imagePreview}
                 alt="Preview"
-                className="max-h-32 rounded-md border"
+                className="max-h-32 rounded-md border cursor-zoom-in"
+                onClick={() => openImage(imagePreview, imageId ? `Image #${imageId}` : "Preview")}
+
               />
               {!imageId && (
                 <button
@@ -546,6 +687,31 @@ export default function ChatPage() {
           )}
         </div>
       </div>
+
+      {expandedSrc && (
+        <div
+          className="fixed inset-0 z-50 bg-black/80 flex items-center justify-center p-4"
+          onClick={closeImage}
+        >
+          <div
+            className="relative max-w-6xl w-full max-h-[90vh]"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <button
+              onClick={closeImage}
+              className="absolute top-2 right-2 bg-white/10 hover:bg-white/20 text-white rounded-full p-2"
+            >
+              <X className="h-5 w-5" />
+            </button>
+
+            <img
+              src={expandedSrc}
+              alt="Expanded"
+              className="w-full h-full object-contain rounded-lg"
+            />
+          </div>
+        </div>
+      )}
     </main>
   );
 }

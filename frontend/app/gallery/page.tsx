@@ -3,6 +3,7 @@
 import { useState, useRef } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api, type Image } from "@/lib/api";
+import { useRouter } from "next/navigation";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -16,11 +17,14 @@ import {
   MoreVertical,
 } from "lucide-react";
 
+
+
 export default function GalleryPage() {
   const queryClient = useQueryClient();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [uploadingPublic, setUploadingPublic] = useState(false);
   const [filter, setFilter] = useState<"all" | "public" | "private">("all");
+  const router = useRouter();
 
   const { data: images, isLoading } = useQuery({
     queryKey: ["images"],
@@ -152,6 +156,7 @@ export default function GalleryPage() {
             <Card
               key={image.id}
               className="group overflow-hidden cursor-pointer hover:ring-2 hover:ring-primary transition-all"
+              onDoubleClick={() => router.push(`/chat?imageId=${image.id}`)}
             >
               <div className="relative aspect-square">
                 <img
