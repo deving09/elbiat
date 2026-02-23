@@ -28,6 +28,7 @@ from sqlalchemy import create_engine, select, update
 from sqlalchemy.orm import sessionmaker, Session
 from sqlalchemy import text
 
+from app.models import EvalStatus
 
 # Configure logging
 logging.basicConfig(
@@ -72,12 +73,14 @@ MAX_RETRIES = 3
 # For standalone operation, we'll use raw SQL or define minimal models here
 from enum import Enum as PyEnum
 
+
+"""
 class EvalStatus(str, PyEnum):
     QUEUED = "queued"
     RUNNING = "running"
-    COMPLETED = "completed"
+    COMPLETE = "completed"
     FAILED = "failed"
-
+"""
 
 # =============================================================================
 # Database Operations
@@ -104,7 +107,8 @@ class EvalWorkerDB:
                     er.model_id,
                     t.name as task_name,
                     t.vlmeval_data,
-                    t.primary_metric,
+                    t.primary_metric_key,
+                    t.primary_metric_suffix,
                     m.name as model_name,
                     m.vlmeval_model
                 FROM eval_runs er
@@ -125,7 +129,7 @@ class EvalWorkerDB:
         """Mark a run as running."""
         with self.get_session() as session:
             session.execute(
-                test("""
+                text("""
                 UPDATE eval_runs 
                 SET status = :status,
                     started_at = :started_at,
@@ -157,7 +161,8 @@ class EvalWorkerDB:
                 WHERE id = :id
                 """),
                 {
-                    "status": EvalStatus.COMPLETED.value,
+                    "status": EvalStatus.COMPLETE.name,
+                    #"status": "completed", # EvalStatus.COMPLETED.name,
                     "finished_at": datetime.utcnow(),
                     "metrics": json.dumps(metrics),
                     "id": run_id
@@ -239,6 +244,49 @@ def parse_acc_csv(csv_path: str) -> dict:
     return metrics
 
 
+
+def parse_metrics_file(file_path: str) -> dict:
+    """Parse a VLMEvalKit metrics file (*_acc.csv or *_score.json) into metrics dict."""
+    metrics = {}
+    
+    try:
+        if file_path.endswith('.json'):
+            with open(file_path, 'r') as f:
+                data = json.load(f)
+                for key, value in data.items():
+                    # Skip nested dicts
+                    if isinstance(value, dict):
+                        continue
+                    # Try to convert to float
+                    if isinstance(value, (int, float)):
+                        metrics[key] = float(value)
+                    elif isinstance(value, str):
+                        try:
+                            metrics[key] = float(value)
+                        except (ValueError, TypeError):
+                            metrics[key] = value
+                    else:
+                        metrics[key] = value
+        else:
+            # CSV parsing (existing logic)
+            with open(file_path, 'r') as f:
+                reader = csv.DictReader(f)
+                rows = list(reader)
+                if rows:
+                    for row in rows:
+                        for key, value in row.items():
+                            try:
+                                metrics[key] = float(value)
+                            except (ValueError, TypeError):
+                                metrics[key] = value
+    except Exception as e:
+        logger.error(f"Error parsing {file_path}: {e}")
+        metrics["parse_error"] = str(e)
+    
+    return metrics
+
+
+
 def parse_metrics(
     run_dir: str, 
     model_name: str, 
@@ -262,7 +310,7 @@ def parse_metrics(
     
     if os.path.exists(primary_path):
         logger.info(f"Found primary metric file: {primary_path}")
-        metrics.update(parse_acc_csv(primary_path))
+        metrics.update(parse_metrics_file(primary_path))
     else:
         # Try to find any matching acc.csv file
         logger.warning(f"Primary metric file not found: {primary_path}")
@@ -270,14 +318,14 @@ def parse_metrics(
         matches = glob.glob(pattern)
         if matches:
             logger.info(f"Found alternative metric file: {matches[0]}")
-            metrics.update(parse_acc_csv(matches[0]))
+            metrics.update(parse_metrics_file(matches[0]))
         else:
             # Last resort: find any acc.csv
             pattern = os.path.join(run_dir, "*_acc.csv")
             matches = glob.glob(pattern)
             if matches:
                 logger.info(f"Found fallback metric file: {matches[0]}")
-                metrics.update(parse_acc_csv(matches[0]))
+                metrics.update(parse_metrics_file(matches[0]))
             else:
                 metrics["warning"] = "No metric CSV file found"
     
@@ -336,7 +384,7 @@ def run_vlmeval(
         cwd=VLMEVAL_ROOT,
         capture_output=True,
         text=True,
-        timeout=7200  # 2 hour timeout per eval
+        timeout=14400  # 2 hour timeout per eval
     )
     
     # Find the new run directory

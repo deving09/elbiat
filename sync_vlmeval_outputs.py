@@ -78,6 +78,48 @@ def parse_acc_csv(csv_path: str) -> dict:
     return metrics
 
 
+def parse_metrics_file(file_path: str) -> dict:
+    """Parse a VLMEvalKit metrics file (*_acc.csv or *_score.json) into metrics dict."""
+    metrics = {}
+    
+    try:
+        if file_path.endswith('.json'):
+            with open(file_path, 'r') as f:
+                data = json.load(f)
+                for key, value in data.items():
+                    # Skip nested dicts
+                    if isinstance(value, dict):
+                        continue
+                    # Try to convert to float
+                    print(f"key: {key}")
+                    if isinstance(value, (int, float)):
+                        metrics[key] = float(value)
+                    elif isinstance(value, str):
+                        try:
+                            metrics[key] = float(value)
+                        except (ValueError, TypeError):
+                            metrics[key] = value
+                    else:
+                        metrics[key] = value
+        else:
+            # CSV parsing (existing logic)
+            with open(file_path, 'r') as f:
+                reader = csv.DictReader(f)
+                rows = list(reader)
+                if rows:
+                    for row in rows:
+                        for key, value in row.items():
+                            try:
+                                metrics[key] = float(value)
+                            except (ValueError, TypeError):
+                                metrics[key] = value
+    except Exception as e:
+        logger.error(f"Error parsing {file_path}: {e}")
+        metrics["parse_error"] = str(e)
+    
+    return metrics
+
+
 def find_metrics_for_task(run_dir: str, model_vlmeval: str, task_vlmeval: str, metric_suffix: str = "_acc.csv") -> Optional[dict]:
     """Find and parse metrics for a specific task in a run directory."""
     # Try exact match first
@@ -85,13 +127,13 @@ def find_metrics_for_task(run_dir: str, model_vlmeval: str, task_vlmeval: str, m
     exact_path = os.path.join(run_dir, pattern)
     
     if os.path.exists(exact_path):
-        return parse_acc_csv(exact_path)
+        return parse_metrics_file(exact_path)
     
     # Try fuzzy match
     pattern = os.path.join(run_dir, f"*{task_vlmeval}*{metric_suffix}")
     matches = glob.glob(pattern)
     if matches:
-        return parse_acc_csv(matches[0])
+        return parse_metrics_file(matches[0])
     
     return None
 
