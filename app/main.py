@@ -10,6 +10,9 @@ from app.auth import decode_token, JWTError
 from app.deps import get_current_user
 
 
+from fastapi.middleware.cors import CORSMiddleware
+
+
 import random
 import string
 
@@ -17,6 +20,7 @@ from app.routes.images import router as images_router
 from app.routes.auth import router as auth_router
 from app.routes.evals import router as eval_router
 from app.routes.chat import router as chat_router  
+from app.routes.bulk_upload import router as bulk_router
 
 """
 app = FastAPI(
@@ -30,6 +34,17 @@ app.include_router(images_router)
 app.include_router(auth_router)
 app.include_router(eval_router)
 app.include_router(chat_router, prefix="/api")
+app.include_router(bulk_router)
+
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["https://elbiat.io", "http://localhost:3000"],  # Your frontend URL
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
 
 def get_db():
     db = SessionLocal()

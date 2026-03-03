@@ -22,6 +22,9 @@ import numpy as np
 from datetime import datetime
 
 
+
+
+
 from app import models
 from app.db import get_db
 from app.deps import get_current_user
@@ -271,6 +274,7 @@ def ingest_url(payload: IngestUrlRequest, db: Session = Depends(get_db), user=De
 @router.post("/ingest_upload")
 async def ingest_upload(
     file: UploadFile = File(...),
+    is_public: bool = Form(default=False),
     db: Session = Depends(get_db),
     current_user = Depends(get_current_user)
 ):
@@ -320,6 +324,7 @@ async def ingest_upload(
         image_url=None,            # uploads don’t have to have a URL
         image_path=str(path),
         content_length=content_length,
+        is_public=is_public,
     )
     db.add(row)
     try:
@@ -375,6 +380,8 @@ def list_my_images(
     db: Session = Depends(get_db),                 # <- your DB session dependency
     user=Depends(get_current_user),               # <- your auth dependency
 ):
+    print(f"DEBUG: public={public}, limit={limit}, offset={offset}")  # Add this
+
     q = db.query(models.Image).filter(models.Image.user_id == user.id)
 
     if public is not None:
