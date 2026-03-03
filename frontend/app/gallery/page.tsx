@@ -26,10 +26,19 @@ export default function GalleryPage() {
   const [filter, setFilter] = useState<"all" | "public" | "private">("all");
   const router = useRouter();
 
+  const [page, setPage] = useState(0);
+  const IMAGES_PER_PAGE = 48;
+
   const { data: images, isLoading } = useQuery({
-    queryKey: ["images"],
-    queryFn: () => api.getImages(),
+    queryKey: ["images", filter, page],
+    queryFn: () => api.getImages({
+      public: filter === "all" ? undefined : filter === "public",
+      limit: IMAGES_PER_PAGE,
+      offset: page * IMAGES_PER_PAGE,
+    }),
   });
+
+
 
   const uploadMutation = useMutation({
     mutationFn: ({ file, isPublic }: { file: File; isPublic: boolean }) =>
@@ -57,13 +66,7 @@ export default function GalleryPage() {
     }
   };
 
-  const filteredImages = images?.filter((img) => {
-    if (filter === "all") return true;
-    if (filter === "public") return img.is_public;
-    if (filter === "private") return !img.is_public;
-    return true;
-  });
-
+  
   return (
     <main className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-8">
       <div className="flex items-center justify-between mb-8">
@@ -118,14 +121,14 @@ export default function GalleryPage() {
         <Button
           variant={filter === "all" ? "default" : "outline"}
           size="sm"
-          onClick={() => setFilter("all")}
+          onClick={() => { setFilter("all"); setPage(0); }}
         >
           All
         </Button>
         <Button
           variant={filter === "public" ? "default" : "outline"}
           size="sm"
-          onClick={() => setFilter("public")}
+          onClick={() => { setFilter("public"); setPage(0); }}
         >
           <Globe className="h-4 w-4 mr-2" />
           Public
@@ -133,7 +136,7 @@ export default function GalleryPage() {
         <Button
           variant={filter === "private" ? "default" : "outline"}
           size="sm"
-          onClick={() => setFilter("private")}
+          onClick={() => { setFilter("private"); setPage(0); }}
         >
           <Lock className="h-4 w-4 mr-2" />
           Private
@@ -150,9 +153,9 @@ export default function GalleryPage() {
             />
           ))}
         </div>
-      ) : filteredImages && filteredImages.length > 0 ? (
+      ) : images && images.length > 0 ? (
         <div className="grid gap-4 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4">
-          {filteredImages.map((image) => (
+          {images.map((image) => (
             <Card
               key={image.id}
               className="group overflow-hidden cursor-pointer hover:ring-2 hover:ring-primary transition-all"
@@ -226,6 +229,30 @@ export default function GalleryPage() {
           </CardContent>
         </Card>
       )}
+      {/* Pagination */}
+      {images && images.length > 0 && (
+        <div className="flex items-center justify-center gap-4 mt-8">
+          <Button
+            variant="outline"
+            onClick={() => setPage(p => Math.max(0, p - 1))}
+            disabled={page === 0}
+          >
+            Previous
+          </Button>
+          <span className="text-sm text-muted-foreground">
+            Page {page + 1}
+          </span>
+          <Button
+            variant="outline"
+            onClick={() => setPage(p => p + 1)}
+            disabled={images.length < IMAGES_PER_PAGE}
+          >
+            Next
+          </Button>
+        </div>
+      )}
+
+
     </main>
   );
 }

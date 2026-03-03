@@ -690,11 +690,11 @@ export default function ChatPage() {
 
       {expandedSrc && (
         <div
-          className="fixed inset-0 z-50 bg-black/80 flex items-center justify-center p-4"
-          onClick={closeImage}
+        className="fixed inset-0 z-50 bg-black/80 flex items-start justify-center p-4 overflow-y-auto"
+        onClick={closeImage}
         >
           <div
-            className="relative max-w-6xl w-full max-h-[90vh]"
+            className="relative max-w-6xl w-full"
             onClick={(e) => e.stopPropagation()}
           >
             <button
@@ -707,7 +707,7 @@ export default function ChatPage() {
             <img
               src={expandedSrc}
               alt="Expanded"
-              className="w-full h-full object-contain rounded-lg"
+              className="w-full h-auto max-h-none rounded-lg"
             />
           </div>
         </div>

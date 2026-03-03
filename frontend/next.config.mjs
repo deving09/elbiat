@@ -10,6 +10,22 @@ const nextConfig = {
       },
     ],
   },
+
+  // Increase body size limit for uploads
+  experimental: {
+    serverActions: {
+      bodySizeLimit: '500mb',
+    },
+  },
+  
+  // For API routes
+  api: {
+    bodyParser: {
+      sizeLimit: '500mb',
+    },
+    responseLimit: false,
+  },
+
   // Proxy API calls to FastAPI in development
   async rewrites() {
     return [
