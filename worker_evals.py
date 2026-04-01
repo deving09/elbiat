@@ -14,6 +14,9 @@ Or as a systemd service for production.
 
 import os
 import sys
+sys.path.insert(0, '/home/ubuntu/workspace/elbiat/external/VLMEvalKit')
+
+
 import json
 import time
 import glob
@@ -28,7 +31,11 @@ from sqlalchemy import create_engine, select, update
 from sqlalchemy.orm import sessionmaker, Session
 from sqlalchemy import text
 
-from app.models import EvalStatus
+from app.models import EvalStatus, Models
+
+
+
+
 
 # Configure logging
 logging.basicConfig(
@@ -56,12 +63,52 @@ VLMEVAL_ROOT = os.getenv(
     "VLMEVAL_ROOT",
     "/home/ubuntu/workspace/elbiat/external/VLMEvalKit"
 )
+
+ELBIAT_ROOT = os.getenv(
+    "ELBIAT_ROOT", 
+    "/home/ubuntu/workspace/elbiat"
+)
+
+
 VLMEVAL_OUTPUTS = os.path.join(VLMEVAL_ROOT, "outputs")
-VLMEVAL_RUN_SCRIPT = os.path.join(VLMEVAL_ROOT, "run.py")
+#VLMEVAL_RUN_SCRIPT = os.path.join(VLMEVAL_ROOT, "run.py")
+VLMEVAL_RUN_SCRIPT = os.path.join(ELBIAT_ROOT, "scripts/run_vlmeval.py")
 
 # Worker settings
 POLL_INTERVAL_SECONDS = 5
 MAX_RETRIES = 3
+
+
+# Add custom model loading
+def register_custom_models():
+    """Register finetuned models with VLMEvalKit."""
+    from vlmeval.config import supported_VLM
+    from vlmeval.vlm import InternVLChat
+    from functools import partial
+    from sqlalchemy import select
+
+    engine = create_engine(DATABASE_URL)
+    SessionLocal = sessionmaker(bind=engine)
+    
+    #def get_session(self) -> Session:
+    #    return self.SessionLocal() 
+    
+    # Get finetuned models from database
+    with SessionLocal() as session:
+        finetuned = session.execute(
+            select(Models).where(Models.is_finetuned == True)
+        ).scalars().all()
+        
+        for model in finetuned:
+            if model.model_path and model.vlmeval_model:
+                supported_VLM[model.vlmeval_model] = partial(
+                    InternVLChat,
+                    model_path=model.model_path,
+                    version='V2.5',
+                )
+                print(f"Registered custom model: {model.vlmeval_model}")
+
+    
 
 # =============================================================================
 # Database Models (import from your app or define here)
@@ -487,6 +534,10 @@ def process_one_run(db: EvalWorkerDB) -> bool:
 
 
 def main():
+    
+    # Call at startup
+    register_custom_models()
+
     """Main worker loop."""
     logger.info("Starting eval worker...")
     logger.info(f"VLMEvalKit root: {VLMEVAL_ROOT}")

@@ -3,9 +3,15 @@ import os
 from typing import Any, Dict, Optional
 
 import httpx
-from fastapi import APIRouter, Header, HTTPException, Request
+from fastapi import APIRouter, Header, HTTPException, Request, Depends
+from sqlalchemy.orm import Session
 from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel, ConfigDict, Field
+
+from app.models import QueryLog, User
+from app.db import get_db
+from app.deps import get_current_user
+import time
 
 
 
@@ -44,37 +50,27 @@ router = APIRouter(tags=["chat"])
 async def chat_proxy(
     body: ChatProxyRequest,
     request: Request,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
     authorization: Optional[str] = Header(default=None),
 ) -> Any:
     """
     Proxies chat requests to the model service.
-
-    - If upstream returns streaming (chunked / event-stream), we stream bytes through.
-    - Otherwise we return JSON.
-
-    The frontend can call:
-      POST /api/chat
-
-    Environment variables:
-      MODEL_BASE  (default http://127.0.0.1:9000)
+    Logs all queries and responses to query_logs table.
     """
     upstream_url = f"{MODEL_BASE}/{DEFAULT_MODEL_ROUTE}"
-
-    # Forward headers (keep it minimal)
     headers: Dict[str, str] = {"Content-Type": "application/json"}
     if authorization:
         headers["Authorization"] = authorization
-
-    # Forward query params too (if you ever add ?model=... etc.)
+    
     params = dict(request.query_params)
-
     payload = body.model_dump(exclude_none=True)
-
     timeout = httpx.Timeout(connect=10.0, read=None, write=30.0, pool=10.0)
-
+    
+    start_time = time.time()
+    
     async with httpx.AsyncClient(timeout=timeout) as client:
         try:
-            # Use streaming request to support both streaming + non-streaming responses
             async with client.stream(
                 "POST",
                 upstream_url,
@@ -82,65 +78,98 @@ async def chat_proxy(
                 params=params,
                 json=payload,
             ) as resp:
-                # Map upstream errors to a useful response
                 if resp.status_code >= 400:
-                    # Try to read upstream body safely (may be JSON or text)
                     try:
                         err_json = await resp.json()
                         detail = {"upstream_status": resp.status_code, "upstream": err_json}
                     except Exception:
                         err_text = (await resp.aread()).decode("utf-8", errors="replace")
                         detail = {"upstream_status": resp.status_code, "upstream": err_text}
-                    
-                    # TEMP debug
-                    print("UPSTREAM STATUS:", resp.status_code)
-                    print("UPSTREAM BODY:", detail)
                     raise HTTPException(status_code=502, detail=detail)
-
+                
                 content_type = resp.headers.get("content-type", "")
-
-                # If upstream is SSE or otherwise streaming, pass-through bytes
                 is_streaming = (
                     "text/event-stream" in content_type
                     or "application/x-ndjson" in content_type
                     or "chunked" in resp.headers.get("transfer-encoding", "").lower()
                 )
-
+                
                 if is_streaming:
-                    async def iter_bytes():
+                    collected_response = []
+                    
+                    async def iter_bytes_and_log():
                         async for chunk in resp.aiter_bytes():
                             if chunk:
+                                collected_response.append(chunk.decode("utf-8", errors="replace"))
                                 yield chunk
-
+                        
+                        # Log after streaming completes
+                        latency_ms = int((time.time() - start_time) * 1000)
+                        full_response = "".join(collected_response)
+                        log_query(
+                            db=db,
+                            user_id=current_user.id,
+                            payload=payload,
+                            response_text=full_response,
+                            latency_ms=latency_ms,
+                        )
+                    
                     passthrough_headers = {}
-                    # Preserve content-type so the client knows how to parse it
                     if content_type:
                         passthrough_headers["Content-Type"] = content_type
-
                     return StreamingResponse(
-                        iter_bytes(),
+                        iter_bytes_and_log(),
                         status_code=200,
                         headers=passthrough_headers,
                     )
-
-                # Non-streaming: parse JSON and return
-                #data = await resp.json()
+                
+                # Non-streaming
                 await resp.aread()
                 data = resp.json()
+                
+                latency_ms = int((time.time() - start_time) * 1000)
+                response_text = data.get("response", "") if isinstance(data, dict) else str(data)
+                
+                log_query(
+                    db=db,
+                    user_id=current_user.id,
+                    payload=payload,
+                    response_text=response_text,
+                    latency_ms=latency_ms,
+                )
+                
                 return JSONResponse(content=data, status_code=200)
-
+                
         except httpx.ConnectError as e:
-            raise HTTPException(
-                status_code=502,
-                detail=f"Could not connect to model service at {upstream_url}: {e}",
-            )
+            raise HTTPException(status_code=502, detail=f"Could not connect to model service: {e}")
         except httpx.ReadError as e:
-            raise HTTPException(
-                status_code=502,
-                detail=f"Read error from model service at {upstream_url}: {e}",
-            )
+            raise HTTPException(status_code=502, detail=f"Read error from model service: {e}")
         except httpx.TimeoutException as e:
-            raise HTTPException(
-                status_code=504,
-                detail=f"Timeout calling model service at {upstream_url}: {e}",
-            )
+            raise HTTPException(status_code=504, detail=f"Timeout calling model service: {e}")
+
+
+def log_query(
+    db: Session,
+    user_id: int,
+    payload: dict,
+    response_text: str,
+    latency_ms: int,
+):
+    """Log query to database."""
+    try:
+        query_log = QueryLog(
+            user_id=user_id,
+            image_id=payload.get("image_id"),
+            prompt=payload.get("prompt", ""),
+            response=response_text,
+            model_name=payload.get("model", "internvl2.5_8B"),
+            latency_ms=latency_ms,
+            extra_data={
+                "history_length": len(payload.get("history", [])) if payload.get("history") else 0,
+            }
+        )
+        db.add(query_log)
+        db.commit()
+    except Exception as e:
+        print(f"Failed to log query: {e}")
+        db.rollback()

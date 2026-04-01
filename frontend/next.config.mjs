@@ -41,6 +41,8 @@ const nextConfig = {
       { source: '/api/:path*', destination: 'http://127.0.0.1:8000/api/:path*' },
       { source: '/convos', destination: 'http://127.0.0.1:8000/convos' },
       { source: '/bulk/:path*', destination: 'http://127.0.0.1:8000/bulk/:path*' },
+      { source: '/api/feedback/:path*', destination: 'http://127.0.0.1:8000/api/feedback/:path*' },
+
 
     ];
   },

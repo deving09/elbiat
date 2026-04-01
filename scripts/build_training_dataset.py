@@ -323,6 +323,104 @@ def build_answer_refinement(
     
     print(f"\nTotal: {sum(s['count'] for s in stats.values())} examples")
 
+
+def build_dpo_dataset(
+    session: Session,
+    output_dir: Path,
+    test_ratio: float = 0.1,
+    val_ratio: float = 0.1,
+    min_feedback_len: int = 10,
+    seed: int = 42,
+    model_name: str = "Qwen/Qwen2.5-7B-Instruct",
+    temperature: float = 0.7,
+    top_p: float = 0.9,
+    device: str = "auto",
+):
+    """
+    Build DPO preference dataset.
+    - chosen: LLM-refined answer based on feedback
+    - rejected: original model response
+    """
+    convos = get_convos_with_feedback(session, min_feedback_len)
+    print(f"Found {len(convos)} convos with feedback (>= {min_feedback_len} chars)")
+    
+    if not convos:
+        print("No convos found!")
+        return
+    
+    # Load refiner model
+    refiner = AnswerRefiner(
+        model_name=model_name,
+        temperature=temperature,
+        top_p=top_p,
+        device=device,
+    )
+    
+    splits = split_data(convos, 1 - test_ratio - val_ratio, val_ratio, test_ratio, seed)
+    
+    output_dir.mkdir(parents=True, exist_ok=True)
+    
+    stats = {}
+    
+    for split_name, split_convos in splits.items():
+        output_file = output_dir / f"{split_name}.jsonl"
+        count = 0
+        errors = 0
+        
+        with open(output_file, "w") as f:
+            for i, convo in enumerate(split_convos):
+                parsed = parse_convo(convo)
+                
+                if not parsed["prompt"] or not parsed["response"]:
+                    continue
+                
+                print(f"  [{split_name}] {i+1}/{len(split_convos)}: refining convo {convo.id}...", end=" ")
+                
+                try:
+                    refined = refiner.refine(
+                        parsed["prompt"],
+                        parsed["response"],
+                        convo.feedback,
+                    )
+                    print(f"OK ({len(refined)} chars)")
+                except Exception as e:
+                    print(f"ERROR: {e}")
+                    errors += 1
+                    continue
+                
+                image = session.get(Image, convo.image_id)
+                
+                record = {
+                    "id": convo.id,
+                    "image": image.image_path if image else None,
+                    "prompt": parsed["prompt"],
+                    "chosen": refined,
+                    "rejected": parsed["response"],
+                    "feedback": convo.feedback,
+                }
+                f.write(json.dumps(record) + "\n")
+                count += 1
+        
+        stats[split_name] = {"count": count, "errors": errors}
+        print(f"  {split_name}: {count} examples ({errors} errors) -> {output_file}")
+    
+    # Write metadata
+    meta = {
+        "task": "dpo",
+        "total": sum(s["count"] for s in stats.values()),
+        "splits": stats,
+        "min_feedback_len": min_feedback_len,
+        "refiner_model": model_name,
+        "temperature": temperature,
+        "top_p": top_p,
+    }
+    with open(output_dir / "meta.json", "w") as f:
+        json.dump(meta, f, indent=2)
+    
+    print(f"\nTotal: {sum(s['count'] for s in stats.values())} examples")
+
+
+
 # ============== CLI ==============
 
 def main():
@@ -334,7 +432,7 @@ def main():
     fp_parser.add_argument("--output", "-o", required=True, help="Output directory")
     fp_parser.add_argument("--test-ratio", type=float, default=0.1)
     fp_parser.add_argument("--val-ratio", type=float, default=0.1)
-    fp_parser.add_argument("--min-feedback-len", type=int, default=10)
+    fp_parser.add_argument("--min-feedback-len", type=int, default=5)
     fp_parser.add_argument("--seed", type=int, default=42)
     
     # Answer refinement
@@ -342,13 +440,25 @@ def main():
     ar_parser.add_argument("--output", "-o", required=True, help="Output directory")
     ar_parser.add_argument("--test-ratio", type=float, default=0.1)
     ar_parser.add_argument("--val-ratio", type=float, default=0.1)
-    ar_parser.add_argument("--min-feedback-len", type=int, default=10)
+    ar_parser.add_argument("--min-feedback-len", type=int, default=5)
     ar_parser.add_argument("--seed", type=int, default=42)
     ar_parser.add_argument("--model", default="Qwen/Qwen2.5-7B-Instruct", help="LLM for refinement")
     ar_parser.add_argument("--temperature", type=float, default=0.7, help="0 = deterministic, higher = more random")
     ar_parser.add_argument("--top-p", type=float, default=0.9)
     ar_parser.add_argument("--device", default="auto", help="Device for model")
     
+    # DPO dataset
+    dpo_parser = subparsers.add_parser("dpo", help="Build DPO preference dataset")
+    dpo_parser.add_argument("--output", "-o", required=True, help="Output directory")
+    dpo_parser.add_argument("--test-ratio", type=float, default=0.1)
+    dpo_parser.add_argument("--val-ratio", type=float, default=0.1)
+    dpo_parser.add_argument("--min-feedback-len", type=int, default=5)
+    dpo_parser.add_argument("--seed", type=int, default=42)
+    dpo_parser.add_argument("--model", default="Qwen/Qwen2.5-7B-Instruct", help="LLM for refinement")
+    dpo_parser.add_argument("--temperature", type=float, default=0.7)
+    dpo_parser.add_argument("--top-p", type=float, default=0.9)
+    dpo_parser.add_argument("--device", default="auto")
+
     args = parser.parse_args()
     
     engine = create_engine(DATABASE_URL)
@@ -365,6 +475,19 @@ def main():
             )
         elif args.task == "answer_refinement":
             build_answer_refinement(
+                session,
+                Path(args.output),
+                test_ratio=args.test_ratio,
+                val_ratio=args.val_ratio,
+                min_feedback_len=args.min_feedback_len,
+                seed=args.seed,
+                model_name=args.model,
+                temperature=args.temperature,
+                top_p=args.top_p,
+                device=args.device,
+            )
+        elif args.task == "dpo":
+            build_dpo_dataset(
                 session,
                 Path(args.output),
                 test_ratio=args.test_ratio,

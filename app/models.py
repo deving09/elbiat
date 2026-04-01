@@ -94,6 +94,13 @@ class Models(Base):
 
     model_type: Mapped[str] = mapped_column(String, server_default="vlm")
 
+    # Add these new columns:
+    model_path: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
+    is_finetuned: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    base_model: Mapped[Optional[str]] = mapped_column(String(200), nullable=True)
+
+
+
 
 class EvalStatus(str, enum.Enum):
     """ Enumeration for evaluation status """
@@ -342,4 +349,41 @@ class ImageInstruction(Base):
         server_default=func.now(),
         onupdate=func.now(),
         nullable=False,
+    )
+
+
+
+class QueryLog(Base):
+    __tablename__ = "query_logs"
+    
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    user_id: Mapped[int] = mapped_column(
+        Integer,
+        ForeignKey("users.id"),
+        nullable=False,
+        index=True,
+    )
+    image_id: Mapped[Optional[int]] = mapped_column(
+        Integer,
+        ForeignKey("images.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+    
+    prompt: Mapped[str] = mapped_column(Text, nullable=False)
+    response: Mapped[str] = mapped_column(Text, nullable=False)
+    
+    model_name: Mapped[str] = mapped_column(String(100), nullable=False)
+    
+    # Timing
+    latency_ms: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    
+    # Optional metadata
+    extra_data: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
+    
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        nullable=False,
+        index=True,
     )
