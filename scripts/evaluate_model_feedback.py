@@ -162,6 +162,28 @@ Rate the predicted feedback:
 Respond in JSON only:
 {{"correctness": <0-1>, "completeness": <0-1>, "accuracy": <0-1>, "overall": <0-1>}}"""
 
+
+    IMPROVED_JUDGE_PROMPT = """You are comparing two pieces of feedback about a model's answer to a chart question.
+
+REFERENCE (human-written, treat as ground truth):
+"{reference}"
+
+PREDICTED (model-generated, being evaluated):  
+"{predicted}"
+
+Step 1: What are the key claims in the REFERENCE?
+Step 2: For each key claim, is it present in PREDICTED? (make sure key facts are exact but allow for different wording)
+Step 3: Does PREDICTED contain any claims that contradict REFERENCE?
+
+Score:
+- 1.0 = All key claims present, no contradictions
+- 0.75 = Most key claims present, no contradictions  
+- 0.5 = Some key claims present OR minor contradictions
+- 0.25 = Few key claims present OR major contradictions
+- 0.0 = Missing most claims OR completely wrong
+
+Respond with your reasoning, then JSON: {{"score": <0-1>, "matched_claims": [...], "missing_claims": [...], "contradictions": [...]}}"""
+
     def __init__(self, model_name: str = "Qwen/Qwen2.5-7B-Instruct"):
         print(f"Loading judge model: {model_name}")
         self.tokenizer = AutoTokenizer.from_pretrained(model_name)
@@ -172,7 +194,7 @@ Respond in JSON only:
         )
     
     def judge(self, question: str, model_answer: str, reference: str, predicted: str) -> dict:
-        prompt = self.JUDGE_PROMPT.format(
+        prompt = self.IMPROVED_JUDGE_PROMPT.format(
             question=question,
             model_answer=model_answer,
             reference=reference,
@@ -184,10 +206,11 @@ Respond in JSON only:
         inputs = self.tokenizer(text, return_tensors="pt").to(self.model.device)
         
         with torch.no_grad():
-            outputs = self.model.generate(**inputs, max_new_tokens=200, do_sample=False)
+            outputs = self.model.generate(**inputs, max_new_tokens=500, do_sample=False)
         
         response = self.tokenizer.decode(outputs[0][inputs.input_ids.shape[1]:], skip_special_tokens=True)
-        
+
+       
         try:
             import re
             json_match = re.search(r'\{[^}]+\}', response)
@@ -195,7 +218,7 @@ Respond in JSON only:
                 return json.loads(json_match.group())
         except:
             pass
-        return {"correctness": 0, "completeness": 0, "accuracy": 0, "overall": 0}
+        return {"score": 0}
     
 
 
@@ -433,10 +456,11 @@ class Evaluator:
         if self.judge:
             judge_scores = [r["metrics"]["llm_judge"] for r in results]
             aggregate["llm_judge"] = {
-                "correctness": np.mean([s.get("correctness", 0) for s in judge_scores]),
-                "completeness": np.mean([s.get("completeness", 0) for s in judge_scores]),
-                "accuracy": np.mean([s.get("accuracy", 0) for s in judge_scores]),
-                "overall": np.mean([s.get("overall", 0) for s in judge_scores]),
+                "llm_score": np.mean([s.get("score", 0) for s in judge_scores]), 
+                #"correctness": np.mean([s.get("correctness", 0) for s in judge_scores]),
+                #"completeness": np.mean([s.get("completeness", 0) for s in judge_scores]),
+                #"accuracy": np.mean([s.get("accuracy", 0) for s in judge_scores]),
+                #"overall": np.mean([s.get("overall", 0) for s in judge_scores]),
             }
         
         return {
