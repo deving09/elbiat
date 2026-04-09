@@ -39,6 +39,58 @@ complex visual elements).''',
         "paper_url": "https://arxiv.org/abs/2406.18521",
         "dataset_url": "https://huggingface.co/datasets/princeton-nlp/CharXiv",
     },"""
+"""
+__tablename__ = "tasks"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+
+    name: Mapped[str] = mapped_column(String, unique=True, index=True)
+    
+    display_name: Mapped[str] = mapped_column(String)
+
+    vlmeval_data: Mapped[str] = mapped_column(String, index=True)
+
+    description: Mapped[str] = mapped_column(String)
+
+    #primary_metric: Mapped[str] = mapped_column(String)
+
+     # 🔁 Renamed
+    primary_metric_type: Mapped[str] = mapped_column(String)
+
+    # ➕ New field
+    primary_metric_key: Mapped[str] = mapped_column(
+        String,
+        nullable=False,
+        default="avg",                     # ORM default
+        server_default="avg",              # DB default
+    )
+
+
+    primary_metric_suffix: Mapped[str] = mapped_column(String)
+
+    num_examples: Mapped[int] = mapped_column(Integer, nullable=True)
+
+    paper_url: Mapped[str] = mapped_column(String, nullable=True)
+
+    dataset_url: Mapped[str] = mapped_column(String, nullable=True)
+
+    dataset_version: Mapped[str] = mapped_column(String, nullable=True)
+
+    user_id: Mapped[int] = mapped_column(Integer, 
+        ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True
+    )
+    
+
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        nullable=False,
+        index=True,
+    )
+"""
+
 
 
 TASKS = [
@@ -52,7 +104,7 @@ visual and logical reasoning. It contains 9.6K human-written questions and 23.1K
 machine-generated questions. Questions require both visual understanding and 
 logical/arithmetic reasoning.""",
         "primary_metric_suffix": "_acc.csv",
-        "primary_metric": "acc",
+        "primary_metric_type": "acc",
         "dataset_version": "test",
         "paper_url": "https://aclanthology.org/2022.findings-acl.177/",
         "dataset_url": "https://github.com/vis-nlp/ChartQA",
@@ -65,7 +117,7 @@ logical/arithmetic reasoning.""",
         "description": """MME is a comprehensive evaluation benchmark for Multimodal Large 
 Language Models. It measures both perception and cognition abilities across 14 subtasks.""",
         "primary_metric_suffix": "_score.csv",
-        "primary_metric": "score",
+        "primary_metric_type": "score",
         "user_id": 1
     },
     {
@@ -76,10 +128,126 @@ Language Models. It measures both perception and cognition abilities across 14 s
 millions of question-answer pairs over bar charts, line graphs, and dot plots, 
 requiring structural understanding and numerical reasoning.""",
         "primary_metric_suffix": "_acc.csv",
-        "primary_metric": "acc",
+        "primary_metric_type": "acc",
         "paper_url": "https://arxiv.org/abs/1909.00997",
         "user_id": 1
     },
+
+    {
+        "name": "pope",
+        "display_name": "POPE",
+        "vlmeval_data": "POPE",
+        "description": """POPE (Polling-based Object Probing Evaluation) is a benchmark 
+for evaluating object hallucination in large vision-language models. It uses a 
+polling-based query method with Yes/No questions to probe whether objects exist 
+in images, measuring precision, recall, F1, and accuracy.""",
+        "primary_metric_suffix": "_acc.csv",
+        "primary_metric_type": "acc",
+        "paper_url": "https://arxiv.org/abs/2305.10355",
+        "dataset_url": "https://github.com/RUCAIBox/POPE",
+        "user_id": 1
+    },
+    {
+        "name": "mmstar",
+        "display_name": "MMStar",
+        "vlmeval_data": "MMStar",
+        "description": """MMStar is an elite vision-indispensable multi-modal benchmark 
+comprising 1,500 challenge samples meticulously selected by humans. It addresses two 
+key issues in VLM evaluation: visual content being unnecessary for many samples, and 
+unintentional data leakage in LLM/LVLM training. MMStar evaluates 6 core capabilities 
+across 18 detailed axes.""",
+        "primary_metric_suffix": "_acc.csv",
+        "primary_metric_type": "acc",
+        "paper_url": "https://arxiv.org/abs/2403.20330",
+        "dataset_url": "https://github.com/MMStar-Benchmark/MMStar",
+        "user_id": 1
+    },
+    {
+        "name": "blink",
+        "display_name": "BLINK",
+        "vlmeval_data": "BLINK",
+        "description": """BLINK is a benchmark designed to test visual perception abilities 
+that multimodal LLMs struggle with. It contains tasks that are easy for humans but 
+challenging for models, focusing on core visual perception skills like relative depth, 
+visual correspondence, forensics detection, jigsaw puzzles, and multi-view reasoning.""",
+        "primary_metric_suffix": "_acc.csv",
+        "primary_metric_type": "acc",
+        "paper_url": "https://arxiv.org/abs/2404.12390",
+        "dataset_url": "https://zeyofu.github.io/blink/",
+        "user_id": 1
+    },
+    {
+        "name": "cvbench_2d",
+        "display_name": "CV-Bench 2D",
+        "vlmeval_data": "CV-Bench-2D",
+        "description": """CV-Bench 2D evaluates 2D spatial understanding and reasoning 
+capabilities. It tests abilities like object localization, spatial relationships 
+(left/right, above/below), distance estimation, and size comparison in 2D image space.""",
+        "primary_metric_suffix": "_acc.csv",
+        "primary_metric_type": "acc",
+        "paper_url": "https://arxiv.org/abs/2406.08290",
+        "dataset_url": "https://github.com/cambrian-mllm/cambrian",
+        "user_id": 1
+    },
+    {
+        "name": "cvbench_3d",
+        "display_name": "CV-Bench 3D",
+        "vlmeval_data": "CV-Bench-3D",
+        "description": """CV-Bench 3D evaluates 3D spatial understanding and depth 
+reasoning capabilities. It tests abilities like depth ordering, 3D spatial 
+relationships, distance estimation in 3D space, and understanding of camera 
+perspective and viewpoint.""",
+        "primary_metric_suffix": "_acc.csv",
+        "primary_metric_type": "acc",
+        "paper_url": "https://arxiv.org/abs/2406.08290",
+        "dataset_url": "https://github.com/cambrian-mllm/cambrian",
+        "user_id": 1
+    },
+    {
+        "name": "mmvp",
+        "display_name": "MMVP",
+        "vlmeval_data": "MMVP",
+        "description": """MMVP (Multimodal Visual Patterns) is a benchmark that identifies 
+visual patterns where CLIP-based vision encoders struggle, leading to systematic failures 
+in multimodal LLMs. It contains challenging visual perception pairs that test fine-grained 
+visual understanding, orientation, counting, and visual properties that text encoders miss.""",
+        "primary_metric_suffix": "_acc.csv",
+        "primary_metric_type": "acc",
+        "paper_url": "https://arxiv.org/abs/2401.06209",
+        "dataset_url": "https://github.com/tsb0601/MMVP",
+        "user_id": 1
+    },
+
+    {
+        "name": "mochi_naive",
+        "display_name": "MOCHI (Naive Multi-Image)",
+        "vlmeval_data": "MOCHI_Naive",
+        "description": """MOCHI (Multiview Object Consistency in Humans and Image models) 
+tests 3D shape understanding through odd-one-out tasks. This naive approach passes 
+multiple images (3-4) separately to the VLM, testing multi-image reasoning. Each 
+trial shows views of objects where one is different from the others.""",
+        "primary_metric_suffix": "_acc.csv",
+        "primary_metric_type": "acc",
+
+        "paper_url": "https://arxiv.org/abs/2409.05862",
+        "dataset_url": "https://huggingface.co/datasets/tzler/MOCHI",
+        "user_id": 1
+    },
+    {
+        "name": "mochi_grid",
+        "display_name": "MOCHI (Single Grid Image)",
+        "vlmeval_data": "MOCHI_Grid",
+        "description": """MOCHI (Multiview Object Consistency in Humans and Image models) 
+tests 3D shape understanding through odd-one-out tasks. This grid approach merges 
+multiple images into a labeled 2x2 grid (A, B, C, D), testing spatial layout 
+understanding. Each trial shows views of objects where one is different.""",
+        "primary_metric_suffix": "_acc.csv",
+        "primary_metric_type": "acc",
+        "paper_url": "https://arxiv.org/abs/2409.05862",
+        "dataset_url": "https://huggingface.co/datasets/tzler/MOCHI",
+        "user_id": 1
+    },
+
 ]
 
 

@@ -20,6 +20,7 @@ import {
   ThumbsUp,
   ThumbsDown,
   Save,
+  Grid3X3,  
 } from "lucide-react";
 
 // All calls go through Next.js proxy -> FastAPI
@@ -62,6 +63,8 @@ export default function ChatPage() {
   const [imageUrl, setImageUrl] = useState("");
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [imagePreview, setImagePreview] = useState<string | null>(null);
+  const [isApplyingGrid, setIsApplyingGrid] = useState(false);
+  const [isUploading, setIsUploading] = useState(false);
 
   const [isPickingRandom, setIsPickingRandom] = useState(false);
 
@@ -165,6 +168,55 @@ export default function ChatPage() {
   };
 
 
+  const applyGridOverlay = async () => {
+    if (!imageId) return;
+    
+    try {
+      setIsApplyingGrid(true);
+      
+      const resp = await fetch(`/images/${imageId}/grid?cell_size=150`, {
+        method: "POST",
+        headers: getAuthHeaders(),
+      });
+      
+      if (!resp.ok) {
+        const err = await resp.text();
+        throw new Error(err || "Failed to apply grid");
+      }
+      
+      const data = await resp.json();
+      const newImageId = data.image_id;
+      
+      // Update to the new grid image
+      setImageId(newImageId);
+      setImagePreview(`/images/${newImageId}/file`);
+      setHistoryState(null); // Reset history for new image
+      
+      // Add info message
+      setMessages((prev) => [
+        ...prev,
+        {
+          id: Date.now().toString(),
+          role: "assistant",
+          content: `🔲 Grid overlay applied! Columns: ${data.grid_info.col_labels}, Rows: ${data.grid_info.row_labels} (${data.grid_info.cell_width}×${data.grid_info.cell_height}px cells). You can now reference regions like "B3" or "top-left corner".`,
+        },
+      ]);
+    } catch (e) {
+      console.error(e);
+      setMessages((prev) => [
+        ...prev,
+        {
+          id: Date.now().toString(),
+          role: "assistant",
+          content: `❌ ${e instanceof Error ? e.message : "Failed to apply grid"}`,
+        },
+      ]);
+    } finally {
+      setIsApplyingGrid(false);
+    }
+  };
+
+
 
   useEffect(() => {
     scrollToBottom();
@@ -186,20 +238,54 @@ export default function ChatPage() {
     return token ? { Authorization: `Bearer ${token}` } : {};
   };
 
-  const handleImageSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleImageSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    if (file) {
-      setSelectedFile(file);
-      const reader = new FileReader();
-      reader.onload = (e) => {
-        setImagePreview(e.target?.result as string);
-      };
-      reader.readAsDataURL(file);
-      setImageUrl("");
-      setImageId(null);
-      setHistoryState(null);
+    if (!file) return;
+
+    setSelectedFile(file);
+    setImageUrl("");
+    setImageId(null);
+    setHistoryState(null);
+
+    // Show preview immediately
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      setImagePreview(e.target?.result as string);
+    };
+    reader.readAsDataURL(file);
+   
+    // Auto-upload in background
+    setIsUploading(true);
+
+    try {
+      const formData = new FormData();
+      formData.append("file", file);
+      formData.append("is_public", "false");
+
+      // Get auth headers but let browser set Content-Type for FormData
+      const headers = getAuthHeaders();
+      delete headers["Content-Type"];
+      
+      const response = await fetch(INGEST_UPLOAD, {
+        method: "POST",
+        headers,
+        body: formData,
+      });
+      
+      if (response.ok) {
+        const data = await response.json();
+        setImageId(data.image_id);
+      } else {
+        const errorText = await response.text();
+        console.error("Upload failed:", errorText);
+      }
+    } catch (error) {
+      console.error("Auto-upload failed:", error);
+    } finally {
+      setIsUploading(false);
     }
   };
+
 
   const handleUrlChange = (url: string) => {
     setImageUrl(url);
@@ -622,7 +708,9 @@ export default function ChatPage() {
                 )}
                 Random Public
             </Button>
+            
             </div>
+           
           )}
 
           {/* Image preview */}
@@ -633,21 +721,41 @@ export default function ChatPage() {
                 alt="Preview"
                 className="max-h-32 rounded-md border cursor-zoom-in"
                 onClick={() => openImage(imagePreview, imageId ? `Image #${imageId}` : "Preview")}
-
               />
-              {!imageId && (
-                <button
-                  onClick={removeImage}
-                  className="absolute -top-2 -right-2 p-1 rounded-full bg-destructive text-destructive-foreground hover:bg-destructive/90"
-                >
-                  <X className="h-4 w-4" />
-                </button>
-              )}
+              
+              {/* Always show X button to remove image */}
+              <button
+                onClick={removeImage}
+                className="absolute -top-2 -right-2 p-1 rounded-full bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              >
+                <X className="h-4 w-4" />
+              </button>
+              
+              {/* Show ID badge if uploaded */}
               {imageId && (
-                <span className="absolute -top-2 -right-2 px-2 py-0.5 rounded-full bg-green-500 text-white text-xs">
+                <span className="absolute -top-2 left-2 px-2 py-0.5 rounded-full bg-green-500 text-white text-xs">
                   ID: {imageId}
                 </span>
               )}
+              
+              {/* Grid button - show whenever there's an image preview */}
+              <div className="mt-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={applyGridOverlay}
+                  disabled={isLoading || isApplyingGrid || !imageId}
+                  title={!imageId ? "Upload image first to add grid" : "Add grid overlay"}
+                >
+                  {isApplyingGrid ? (
+                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  ) : (
+                    <Grid3X3 className="h-4 w-4 mr-2" />
+                  )}
+                  Add Grid
+                </Button>
+              </div>
             </div>
           )}
 

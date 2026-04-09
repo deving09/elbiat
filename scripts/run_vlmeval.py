@@ -19,6 +19,11 @@ register()
 from vpt.vpt_vlmeval import register_vpt_models
 register_vpt_models()
 
+# Register MOCHI dataset
+from elbiat_datasets.mochi_vlmeval_dataset import register_mochi_datasets
+register_mochi_datasets()
+
+
 # Now run the main script
 sys.argv[0] = str(vlmeval_root / "run.py")
 exec(open(vlmeval_root / "run.py").read())

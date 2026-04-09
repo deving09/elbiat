@@ -16,13 +16,10 @@ from sqlalchemy.orm import Session
 
 from typing import List, Optional, Literal
 
-from PIL import Image
+from PIL import Image, ImageDraw, ImageFont
 from io import BytesIO
 import numpy as np
 from datetime import datetime
-
-
-
 
 
 from app import models
@@ -129,6 +126,80 @@ def _compute_phash(img: Image.Image, hash_size: int = 8 ) -> str:
     bit_string = "".join("1" if b else "0" for b in bits)
     return hex(int(bit_string, 2))[2:].zfill((hash_size * hash_size + 3) // 4)
 
+
+def _get_column_label(index: int) -> str:
+    """Convert column index to letter label (0=A, 25=Z, 26=AA, etc.)"""
+    result = ""
+    while index >= 0:
+        result = string.ascii_uppercase[index % 26] + result
+        index = index // 26 - 1
+    return result
+
+
+def _draw_outlined_text(draw, position, text, font, fill_color=(255, 255, 0), outline_color=(0, 0, 0)):
+    """Draw text with outline for visibility on any background."""
+    x, y = position
+    for dx in [-1, 0, 1]:
+        for dy in [-1, 0, 1]:
+            if dx != 0 or dy != 0:
+                draw.text((x + dx, y + dy), text, font=font, fill=outline_color, anchor="mm")
+    draw.text((x, y), text, font=font, fill=fill_color, anchor="mm")
+
+
+def _add_grid_overlay(img: Image.Image, cell_size: int = 150) -> tuple[Image.Image, dict]:
+    """
+    Add labeled grid overlay to an image.
+    Returns (modified_image, grid_info_dict).
+    """
+    img = img.convert("RGBA")
+    width, height = img.size
+    
+    n_cols = max(1, round(width / cell_size))
+    n_rows = max(1, round(height / cell_size))
+    cell_w = width / n_cols
+    cell_h = height / n_rows
+    
+    overlay = Image.new("RGBA", img.size, (0, 0, 0, 0))
+    draw = ImageDraw.Draw(overlay)
+    
+    font_size = max(16, min(24, int(cell_size / 6)))
+    try:
+        font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", font_size)
+    except:
+        font = ImageFont.load_default()
+    
+    line_color = (255, 255, 255, 180)
+    line_width = 2
+    
+    # Vertical lines + column labels
+    for i in range(n_cols + 1):
+        x = int(i * cell_w)
+        draw.line([(x, 0), (x, height)], fill=line_color, width=line_width)
+        if i < n_cols:
+            label = _get_column_label(i)
+            _draw_outlined_text(draw, (int((i + 0.5) * cell_w), height - font_size - 5), label, font)
+    
+    # Horizontal lines + row labels
+    for j in range(n_rows + 1):
+        y = int(j * cell_h)
+        draw.line([(0, y), (width, y)], fill=line_color, width=line_width)
+        if j < n_rows:
+            label = str(j + 1)
+            _draw_outlined_text(draw, (width - font_size - 5, int((j + 0.5) * cell_h)), label, font)
+    
+    result = Image.alpha_composite(img, overlay).convert("RGB")
+    
+    grid_info = {
+        "n_cols": n_cols,
+        "n_rows": n_rows,
+        "col_labels": f"A-{_get_column_label(n_cols - 1)}",
+        "row_labels": f"1-{n_rows}",
+        "cell_width": round(cell_w),
+        "cell_height": round(cell_h),
+    }
+    
+    return result, grid_info
+        
 
 def _dedupe_by_sha(db: Session, sha256: str, content_length: int) -> Optional[models.Image]:
     # Use sha256 as unique truth; content_length as sanity check
@@ -437,4 +508,70 @@ def get_random_public_image(db: Session = Depends(get_db), user=Depends(get_curr
         raise HTTPException(status_code=404, detail="No public images found")
 
     return ImageOut.model_validate(row)
+
+@router.post("/{image_id}/grid")
+def create_grid_overlay(
+    image_id: int,
+    cell_size: int = Query(default=150, ge=50, le=500),
+    db: Session = Depends(get_db),
+    user=Depends(get_current_user),
+):
+    """Create a grid overlay version of an image."""
+    # Get original
+    original = db.execute(
+        select(models.Image).where(models.Image.id == image_id)
+    ).scalar_one_or_none()
+    
+    if not original:
+        raise HTTPException(status_code=404, detail="Image not found")
+    
+    if original.user_id != user.id and not original.is_public:
+        raise HTTPException(status_code=403, detail="Access denied")
+    
+    # Load and add grid
+    img = Image.open(original.image_path).convert("RGB")
+    grid_img, grid_info = _add_grid_overlay(img, cell_size=cell_size)
+    
+    # Save grid image
+    original_path = Path(original.image_path)
+    grid_filename = f"{original_path.stem}_grid_{cell_size}{original_path.suffix}"
+    grid_path = IMAGES_DIR / grid_filename
+    _atomic_write(grid_path, grid_img)
+    
+    # Compute hashes
+    with open(grid_path, "rb") as f:
+        data = f.read()
+    sha256 = _sha256_bytes(data)
+    content_length = len(data)
+    
+    # Check if already exists
+    existing = _dedupe_by_sha(db, sha256, content_length)
+    if existing:
+        return {
+            "status": "exists",
+            "image_id": existing.id,
+            "image_path": existing.image_path,
+            "original_image_id": image_id,
+            "grid_info": grid_info,
+        }
+    
+    # Create new record
+    phash = _compute_phash(grid_img)
+    row = _save_image_row(
+        db,
+        user_id=user.id,
+        sha256=sha256,
+        phash=phash,
+        image_url=None,
+        image_path=str(grid_path),
+        content_length=content_length,
+    )
+    
+    return {
+        "status": "created",
+        "image_id": row.id,
+        "image_path": row.image_path,
+        "original_image_id": image_id,
+        "grid_info": grid_info,
+    }
 
