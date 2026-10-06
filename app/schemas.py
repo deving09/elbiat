@@ -5,6 +5,19 @@ from .models import EvalStatus
 
 from datetime import datetime
 
+
+
+class UserResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    
+    id: int
+    email: EmailStr
+    role: str
+    experiment_bucket: Optional[str] = None
+    is_active: bool
+    created_at: datetime
+
+
 class ConvoCreate(BaseModel):
     #user_id: int
     image_id: int
@@ -45,8 +58,12 @@ class SignupRequest(BaseModel):
     password: str = Field(min_length=8, max_length=256)
 
 class SignupResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    
     id: int
     email: EmailStr
+    role: str
+    experiment_bucket: Optional[str] = None
 
 
 class TaskCreate(BaseModel):

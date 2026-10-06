@@ -6,14 +6,29 @@ from sqlalchemy.exc import IntegrityError
 from app.db import get_db
 from app import models
 from app.auth import verify_password, create_access_token, decode_token, hash_password
-from app.schemas import SignupRequest, SignupResponse
+from app.schemas import SignupRequest, SignupResponse, UserResponse
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/token")
 
+def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(get_db)) -> models.User:
+    """Dependency to get current user from JWT token."""
+    try:
+        payload = decode_token(token)
+        user_id = payload.get("uid")
+        if user_id is None:
+            raise HTTPException(status_code=401, detail="Invalid token")
+    except Exception:
+        raise HTTPException(status_code=401, detail="Invalid token")
+    
+    user = db.get(models.User, user_id)
+    if not user or not user.is_active:
+        raise HTTPException(status_code=401, detail="User not found or inactive")
+    return user
+
+
 @router.post("/token")
 def login(form: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(get_db)):
-    # form.username will hold email in our case
     email = form.username.strip().lower()
     user = db.execute(select(models.User).where(models.User.email == email)).scalar_one_or_none()
     if not user or not verify_password(form.password, user.password_hash):
@@ -23,14 +38,30 @@ def login(form: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(get
         raise HTTPException(status_code=401, detail="Inactive user")
 
     token = create_access_token(sub=user.email, user_id=user.id)
-    return {"access_token": token, "token_type": "bearer"}
+    
+    # Return token AND user data (including role)
+    return {
+        "access_token": token,
+        "token_type": "bearer",
+        "user": {
+            "id": user.id,
+            "email": user.email,
+            "role": user.role.value,  # .value to get string from enum
+            "experiment_bucket": user.experiment_bucket,
+        }
+    }
+
+
+@router.get("/me", response_model=UserResponse)
+def get_me(current_user: models.User = Depends(get_current_user)):
+    """Get current authenticated user."""
+    return current_user
 
 
 @router.post("/signup", response_model=SignupResponse, status_code=status.HTTP_201_CREATED)
 def signup(payload: SignupRequest, db: Session = Depends(get_db)):
     email = payload.email.strip().lower()
 
-    # Optional: quick existence check (nice error message)
     existing = db.query(models.User).filter(models.User.email == email).first()
     if existing:
         raise HTTPException(status_code=409, detail="Email already registered.")
@@ -40,18 +71,17 @@ def signup(payload: SignupRequest, db: Session = Depends(get_db)):
             email=email,
             password_hash=hash_password(payload.password),
             is_active=True,
+            # role defaults to USER from model
         )
         db.add(user)
         db.commit()
         db.refresh(user)
-        return SignupResponse(id=user.id, email=user.email)
+        return user  # UserResponse will serialize it
 
     except ValueError as e:
-        # bcrypt 72-byte limit or custom validation
         raise HTTPException(status_code=400, detail=str(e))
 
     except IntegrityError:
-        # Handles race condition if two signups happen at once
         db.rollback()
         raise HTTPException(status_code=409, detail="Email already registered.")
 

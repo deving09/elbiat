@@ -5,10 +5,14 @@
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "";
 
 // Types
+
+export type UserRole = "user" | "enterprise" | "admin";
+
 export interface User {
   id: number;
   email: string;
-  username: string;
+  role: UserRole;
+  experiment_bucket: string | null;
 }
 
 export interface Task {
@@ -99,24 +103,6 @@ export function getAccessToken(): string | null {
 }
 
 
-// Decode JWT to get user info (client-side)
-function decodeJWT(token: string): any {
-  try {
-    const base64Url = token.split('.')[1];
-    const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
-    const jsonPayload = decodeURIComponent(
-      atob(base64)
-        .split('')
-        .map((c) => '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2))
-        .join('')
-    );
-    return JSON.parse(jsonPayload);
-  } catch {
-    return null;
-  }
-}
-
-
 
 
 // Base fetch with auth
@@ -154,9 +140,8 @@ async function fetchWithAuth(
 export const api = {
   // Auth - Updated to match your FastAPI endpoints
   async login(email: string, password: string): Promise<{ access_token: string; user: User }> {
-    // Your endpoint uses OAuth2PasswordRequestForm which expects form data
     const formData = new URLSearchParams();
-    formData.append('username', email); // OAuth2 form uses 'username' field
+    formData.append('username', email);
     formData.append('password', password);
 
     const response = await fetch(`${API_BASE}/auth/token`, {
@@ -173,14 +158,11 @@ export const api = {
     const data = await response.json();
     setAccessToken(data.access_token);
 
-    // Decode JWT to get user info since you don't have a /me endpoint
-    const decoded = decodeJWT(data.access_token);
-    const user: User = {
-      id: decoded?.user_id || 0,
-      email: decoded?.sub || email,
+    // User data now comes from backend response
+    return { 
+      access_token: data.access_token, 
+      user: data.user 
     };
-
-    return { access_token: data.access_token, user };
   },
 
   async register(email: string, username: string, password: string): Promise<{ access_token: string; user: User }> {
@@ -204,27 +186,14 @@ export const api = {
   },
 
   async getCurrentUser(): Promise<User> {
-    // Since you don't have a /me endpoint, decode the token
-    const token = getAccessToken();
-    if (!token) {
+    const response = await fetchWithAuth("/auth/me");
+  
+    if (!response.ok) {
+      setAccessToken(null);
       throw new Error("Not authenticated");
     }
-
-    const decoded = decodeJWT(token);
-    if (!decoded) {
-      throw new Error("Invalid token");
-    }
-
-    // Check if token is expired
-    if (decoded.exp && decoded.exp * 1000 < Date.now()) {
-      setAccessToken(null);
-      throw new Error("Token expired");
-    }
-
-    return {
-      id: decoded.user_id || 0,
-      email: decoded.sub || "",
-    };
+    
+    return response.json();
   },
 
   logout() {

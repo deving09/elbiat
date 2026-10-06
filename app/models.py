@@ -15,6 +15,15 @@ from datetime import datetime
 
 from .db import Base
 
+
+# Add this enum near the top (after the imports, before User class)
+class UserRole(str, enum.Enum):
+    USER = "user"
+    ENTERPRISE = "enterprise"
+    ADMIN = "admin"
+
+
+
 class User(Base):
     __tablename__ = "users"
 
@@ -23,6 +32,19 @@ class User(Base):
     password_hash: Mapped[str] = mapped_column(String, nullable=False)
     is_active: Mapped[bool] = mapped_column(Boolean, server_default="true", nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+    # New fields
+    role: Mapped[UserRole] = mapped_column(
+        Enum(UserRole),
+        nullable=False,
+        default=UserRole.USER,
+        server_default="user",
+    )
+    experiment_bucket: Mapped[Optional[str]] = mapped_column(
+        String(50),
+        nullable=True,
+        index=True,
+    )
 
 
 
