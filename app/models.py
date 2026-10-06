@@ -1,6 +1,6 @@
-from sqlalchemy import String, Integer, Text, Boolean, func, DateTime
+from sqlalchemy import String, Integer, Text, Boolean, func, DateTime, Float, UniqueConstraint
 from sqlalchemy import ForeignKey
-from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.dialects.postgresql import VARCHAR
 from sqlalchemy.sql import expression
@@ -184,6 +184,10 @@ class Convo(Base):
     task: Mapped[str] = mapped_column(String, nullable=False, server_default="open")
 
     feedback: Mapped[str] = mapped_column(Text, nullable=False)
+
+
+    attributions: Mapped[list["DataAttribution"]] = relationship("DataAttribution", back_populates="convo")
+
 
     monetized: Mapped[bool] = mapped_column(
             Boolean,
@@ -386,4 +390,58 @@ class QueryLog(Base):
         server_default=func.now(),
         nullable=False,
         index=True,
+    )
+
+
+class DataAttribution(Base):
+    """
+    Stores influence scores from data attribution methods (TracIn, LogIX, etc.)
+    Links training examples (convos) to their impact on benchmark performance.
+    """
+    __tablename__ = "data_attributions"
+    
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    
+    # Which training example
+    convo_id: Mapped[int] = mapped_column(
+        Integer,
+        ForeignKey("convos.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    
+    # Which model checkpoint was evaluated
+    checkpoint_id: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
+    
+    # Which benchmark (chartqa, mochi_grid, mochi_naive, blink, cvbench)
+    benchmark: Mapped[str] = mapped_column(String(50), nullable=False, index=True)
+    
+    # Attribution method used (tracin, logix, trak, etc.)
+    method: Mapped[str] = mapped_column(String(50), nullable=False, default="tracin")
+    
+    # The raw influence score from the method
+    influence_score: Mapped[float] = mapped_column(Float, nullable=False)
+    
+    # Normalized score (z-score within benchmark, for cross-benchmark comparison)
+    z_score: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    
+    # Rank within this benchmark (1 = most positive influence)
+    rank: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    
+    # Optional: per-test-example breakdown or other method-specific data
+    extra_data: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
+    
+    computed_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        nullable=False,
+    )
+    
+    # Relationships
+    convo: Mapped["Convo"] = relationship("Convo", back_populates="attributions")
+    
+    __table_args__ = (
+        # Unique constraint: one score per (convo, checkpoint, benchmark, method)
+        UniqueConstraint("convo_id", "checkpoint_id", "benchmark", "method", 
+                        name="uq_attribution_convo_checkpoint_benchmark_method"),
     )

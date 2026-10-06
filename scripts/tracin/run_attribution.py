@@ -108,7 +108,7 @@ def load_benchmark_examples(benchmark: str, max_samples: int = None) -> list[dic
         "mochi_grid": "MOCHI_Grid",
         "mochi_naive": "MOCHI_Naive", 
         "blink": "BLINK",
-        "cvbench": "CV-Bench",
+        "cvbench": "CV-Bench-2D",
     }
     
     dataset_name = benchmark_map.get(benchmark.lower(), benchmark)
