@@ -1,11 +1,11 @@
 "use client";
 
 import { useState } from "react";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useRouter } from "next/navigation";
+import { useQuery } from "@tanstack/react-query";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Textarea } from "@/components/ui/textarea";
 import {
   Select,
   SelectContent,
@@ -14,24 +14,25 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import {
-    Dialog,
-    DialogContent,
-    DialogHeader,
-    DialogTitle,
-} from "@/components/ui/dialog";
-import {
   MessageSquare,
-  Check,
   X,
   ChevronLeft,
   ChevronRight,
   ArrowUpDown,
-  Loader2,
   Star,
-  Pencil,
+  Filter,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { getAccessToken } from "@/lib/api";
+
+interface AttributionScore {
+  benchmark: string;
+  method: string;
+  checkpoint_id: string;
+  influence_score: number;
+  z_score: number | null;
+  rank: number | null;
+}
 
 interface Convo {
   id: number;
@@ -42,7 +43,7 @@ interface Convo {
   prompt: string;
   response: string;
   feedback_length: number;
-  attribution_score: number;
+  attributions: AttributionScore[];
   model_name: string;
   task: string;
 }
@@ -54,11 +55,29 @@ interface FeedbackListResponse {
   page_size: number;
 }
 
+interface AttributionFilters {
+  benchmarks: string[];
+  checkpoints: string[];
+  methods: string[];
+}
+
+const fetchFilters = async (): Promise<AttributionFilters> => {
+  const token = getAccessToken();
+  const response = await fetch("/api/feedback/attribution-filters", {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (!response.ok) return { benchmarks: [], checkpoints: [], methods: [] };
+  return response.json();
+};
+
 const fetchFeedback = async (
   page: number,
   pageSize: number,
   sortBy: string,
-  sortOrder: string
+  sortOrder: string,
+  benchmark?: string,
+  checkpointId?: string,
+  method?: string
 ): Promise<FeedbackListResponse> => {
   const token = getAccessToken();
   const params = new URLSearchParams({
@@ -67,6 +86,10 @@ const fetchFeedback = async (
     sort_by: sortBy,
     sort_order: sortOrder,
   });
+  if (benchmark) params.set("benchmark", benchmark);
+  if (checkpointId) params.set("checkpoint_id", checkpointId);
+  if (method) params.set("method", method);
+
   const response = await fetch(`/api/feedback?${params}`, {
     headers: { Authorization: `Bearer ${token}` },
   });
@@ -74,97 +97,63 @@ const fetchFeedback = async (
   return response.json();
 };
 
-const updateFeedback = async (
-  id: number,
-  data: { feedback?: string; enabled?: boolean }
-): Promise<Convo> => {
-  const token = getAccessToken();
-  const response = await fetch(`/api/feedback/${id}`, {
-    method: "PATCH",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${token}`,
-    },
-    body: JSON.stringify(data),
-  });
-  if (!response.ok) throw new Error("Failed to update feedback");
-  return response.json();
+// Helper to get display score from attributions
+const getDisplayScore = (attributions: AttributionScore[], benchmark?: string): number | null => {
+  if (!attributions.length) return null;
+  if (benchmark) {
+    const match = attributions.find((a) => a.benchmark === benchmark);
+    return match?.influence_score ?? null;
+  }
+  return attributions[0]?.influence_score ?? null;
+};
+
+const formatScore = (score: number | null): string => {
+  if (score === null) return "—";
+  return score.toFixed(4);
+};
+
+const getScoreColor = (score: number | null): string => {
+  if (score === null) return "bg-gray-500";
+  if (score > 0.03) return "bg-green-500";
+  if (score > 0) return "bg-green-400";
+  if (score > -0.01) return "bg-yellow-500";
+  return "bg-red-500";
 };
 
 export default function FeedbackPage() {
-  const queryClient = useQueryClient();
+  const router = useRouter();
   const [page, setPage] = useState(1);
   const [pageSize] = useState(12);
   const [sortBy, setSortBy] = useState<string>("created_at");
   const [sortOrder, setSortOrder] = useState<string>("desc");
-  
-  // Card detail view
-  const [selectedConvo, setSelectedConvo] = useState<Convo | null>(null);
-  
-  // Image lightbox
-  const [lightboxOpen, setLightboxOpen] = useState(false);
-  
-  // Feedback editing
-  const [isEditingFeedback, setIsEditingFeedback] = useState(false);
-  const [editedFeedback, setEditedFeedback] = useState("");
+
+  // Attribution filters
+  const [benchmark, setBenchmark] = useState<string | undefined>();
+  const [checkpointId, setCheckpointId] = useState<string | undefined>();
+  const [method, setMethod] = useState<string | undefined>();
+
+  // Fetch available filters
+  const { data: filters } = useQuery({
+    queryKey: ["attribution-filters"],
+    queryFn: fetchFilters,
+  });
 
   const { data, isLoading } = useQuery({
-    queryKey: ["feedback", page, pageSize, sortBy, sortOrder],
-    queryFn: () => fetchFeedback(page, pageSize, sortBy, sortOrder),
+    queryKey: ["feedback", page, pageSize, sortBy, sortOrder, benchmark, checkpointId, method],
+    queryFn: () => fetchFeedback(page, pageSize, sortBy, sortOrder, benchmark, checkpointId, method),
   });
 
-  const updateMutation = useMutation({
-    mutationFn: ({ id, data }: { id: number; data: { feedback?: string; enabled?: boolean } }) =>
-      updateFeedback(id, data),
-    onSuccess: (updatedConvo) => {
-      queryClient.invalidateQueries({ queryKey: ["feedback"] });
-      if (selectedConvo) {
-        setSelectedConvo(updatedConvo);
-      }
-    },
-  });
+  const openDetail = (convo: Convo) => {
+    // Build return URL with current filters
+    const params = new URLSearchParams();
+    params.set("page", String(page));
+    params.set("sort_by", sortBy);
+    params.set("sort_order", sortOrder);
+    if (benchmark) params.set("benchmark", benchmark);
+    if (checkpointId) params.set("checkpoint_id", checkpointId);
+    if (method) params.set("method", method);
 
-  const openCard = (convo: Convo) => {
-    setSelectedConvo(convo);
-    setIsEditingFeedback(false);
-    setEditedFeedback(convo.feedback);
-  };
-
-  const closeCard = () => {
-    setSelectedConvo(null);
-    setIsEditingFeedback(false);
-    setEditedFeedback("");
-  };
-
-  const startEditingFeedback = () => {
-    if (selectedConvo) {
-      setEditedFeedback(selectedConvo.feedback);
-      setIsEditingFeedback(true);
-    }
-  };
-
-  const cancelEditingFeedback = () => {
-    setIsEditingFeedback(false);
-    if (selectedConvo) {
-      setEditedFeedback(selectedConvo.feedback);
-    }
-  };
-
-  const saveFeedback = () => {
-    if (selectedConvo && editedFeedback !== selectedConvo.feedback) {
-      updateMutation.mutate({
-        id: selectedConvo.id,
-        data: { feedback: editedFeedback },
-      });
-    }
-    setIsEditingFeedback(false);
-  };
-
-  const toggleEnabled = (convo: Convo) => {
-    updateMutation.mutate({
-      id: convo.id,
-      data: { enabled: !convo.enabled },
-    });
+    router.push(`/feedback/${convo.id}?from=${encodeURIComponent(`/feedback?${params.toString()}`)}`);
   };
 
   const toggleSort = () => {
@@ -172,43 +161,92 @@ export default function FeedbackPage() {
     setPage(1);
   };
 
-  const totalPages = data ? Math.ceil(data.total / pageSize) : 0;
+  const clearFilters = () => {
+    setBenchmark(undefined);
+    setCheckpointId(undefined);
+    setMethod(undefined);
+    setPage(1);
+  };
 
-  const openDialog = (convo: Convo) => {
-    setSelectedConvo(convo);
-    setEditedFeedback(convo.feedback);
-  };
-  
-  const closeDialog = () => {
-    setSelectedConvo(null);
-    setEditedFeedback("");
-  };
- 
+  const hasFilters = benchmark || checkpointId || method;
+  const totalPages = data ? Math.ceil(data.total / pageSize) : 0;
 
   return (
     <main className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-8">
-      <div className="flex items-center justify-between mb-8">
+      <div className="flex items-center justify-between mb-6">
         <div>
           <h1 className="text-3xl font-bold">Feedback</h1>
           <p className="text-muted-foreground mt-1">
             View and manage your feedback contributions
           </p>
         </div>
-        <div className="flex items-center gap-2">
-          <span className="text-sm text-muted-foreground">Sort by:</span>
-          <Select value={sortBy} onValueChange={(v) => { setSortBy(v); setPage(1); }}>
-            <SelectTrigger className="w-40">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="created_at">Date</SelectItem>
-              <SelectItem value="feedback_length">Feedback Length</SelectItem>
-            </SelectContent>
-          </Select>
-          <Button variant="outline" size="icon" onClick={toggleSort}>
-            <ArrowUpDown className={cn("h-4 w-4 transition-transform", sortOrder === "asc" && "rotate-180")} />
+      </div>
+
+      {/* Filters */}
+      <div className="flex flex-wrap items-center gap-3 mb-6 p-4 bg-muted/50 rounded-lg">
+        <Filter className="h-4 w-4 text-muted-foreground" />
+        <span className="text-sm font-medium">Filters:</span>
+
+        <Select value={benchmark ?? "all"} onValueChange={(v) => { setBenchmark(v === "all" ? undefined : v); setPage(1); }}>
+          <SelectTrigger className="w-36">
+            <SelectValue placeholder="Benchmark" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All Benchmarks</SelectItem>
+            {filters?.benchmarks.map((b) => (
+              <SelectItem key={b} value={b}>{b}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+
+        <Select value={checkpointId ?? "all"} onValueChange={(v) => { setCheckpointId(v === "all" ? undefined : v); setPage(1); }}>
+          <SelectTrigger className="w-40">
+            <SelectValue placeholder="Checkpoint" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All Checkpoints</SelectItem>
+            {filters?.checkpoints.map((c) => (
+              <SelectItem key={c} value={c}>{c}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+
+        <Select value={method ?? "all"} onValueChange={(v) => { setMethod(v === "all" ? undefined : v); setPage(1); }}>
+          <SelectTrigger className="w-32">
+            <SelectValue placeholder="Method" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All Methods</SelectItem>
+            {filters?.methods.map((m) => (
+              <SelectItem key={m} value={m}>{m}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+
+        {hasFilters && (
+          <Button variant="ghost" size="sm" onClick={clearFilters}>
+            <X className="h-4 w-4 mr-1" /> Clear
           </Button>
-        </div>
+        )}
+
+        <div className="flex-1" />
+
+        <span className="text-sm text-muted-foreground">Sort:</span>
+        <Select value={sortBy} onValueChange={(v) => { setSortBy(v); setPage(1); }}>
+          <SelectTrigger className="w-44">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="created_at">Date</SelectItem>
+            <SelectItem value="feedback_length">Feedback Length</SelectItem>
+            <SelectItem value="attribution_score" disabled={!benchmark || !checkpointId}>
+              Attribution Score
+            </SelectItem>
+          </SelectContent>
+        </Select>
+        <Button variant="outline" size="icon" onClick={toggleSort}>
+          <ArrowUpDown className={cn("h-4 w-4 transition-transform", sortOrder === "asc" && "rotate-180")} />
+        </Button>
       </div>
 
       {isLoading ? (
@@ -220,44 +258,54 @@ export default function FeedbackPage() {
       ) : data && data.items.length > 0 ? (
         <>
           <div className="grid gap-4 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4">
-            {data.items.map((convo) => (
-              <Card
-                key={convo.id}
-                className={cn(
-                  "group overflow-hidden cursor-pointer hover:ring-2 hover:ring-primary transition-all",
-                  !convo.enabled && "opacity-50"
-                )}
-                onClick={() => openCard(convo)}
-              >
-                <div className="relative aspect-square">
-                  <img
-                    src={`/images/${convo.image_id}/file`}
-                    alt={`Image ${convo.image_id}`}
-                    className="w-full h-full object-cover"
-                  />
-                  <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent flex flex-col justify-end p-3">
-                    <p className="text-white text-sm line-clamp-2">{convo.prompt}</p>
+            {data.items.map((convo) => {
+              const score = getDisplayScore(convo.attributions, benchmark);
+              return (
+                <Card
+                  key={convo.id}
+                  className={cn(
+                    "group overflow-hidden cursor-pointer hover:ring-2 hover:ring-primary transition-all",
+                    !convo.enabled && "opacity-50"
+                  )}
+                  onClick={() => openDetail(convo)}
+                >
+                  <div className="relative aspect-square">
+                    <img
+                     src={`/images/${convo.image_id}/file`}
+                      alt={`Image ${convo.image_id}`}
+                      className="w-full h-full object-cover"
+                    />
+                    <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent flex flex-col justify-end p-3">
+                      <p className="text-white text-sm line-clamp-2">{convo.prompt}</p>
+                    </div>
+                    <div className="absolute top-2 left-2">
+                      <Badge className={cn("text-xs text-white", getScoreColor(score))}>
+                        <Star className="h-3 w-3 mr-1" />
+                        {formatScore(score)}
+                      </Badge>
+                    </div>
+                    <div className="absolute top-2 right-2">
+                      <Badge variant={convo.enabled ? "default" : "secondary"} className="text-xs">
+                        {convo.enabled ? "Enabled" : "Disabled"}
+                      </Badge>
+                    </div>
                   </div>
-                  <div className="absolute top-2 left-2">
-                    <Badge variant="secondary" className="text-xs">
-                      <Star className="h-3 w-3 mr-1" />
-                      {convo.attribution_score.toFixed(2)}
-                    </Badge>
-                  </div>
-                  <div className="absolute top-2 right-2">
-                    <Badge variant={convo.enabled ? "default" : "secondary"} className="text-xs">
-                      {convo.enabled ? "Enabled" : "Disabled"}
-                    </Badge>
-                  </div>
-                </div>
-                <CardContent className="p-3">
-                  <p className="text-xs text-muted-foreground line-clamp-1">{convo.feedback}</p>
-                  <p className="text-xs text-muted-foreground mt-1">
-                    {new Date(convo.created_at).toLocaleDateString()}
-                  </p>
-                </CardContent>
-              </Card>
-            ))}
+                  <CardContent className="p-3">
+                    <p className="text-xs text-muted-foreground line-clamp-1">{convo.feedback}</p>
+                    <div className="flex items-center justify-between mt-1">
+                      <p className="text-xs text-muted-foreground">
+                        {new Date(convo.created_at).toLocaleDateString()}
+                      </p>
+                      {convo.attributions.length > 0 && (
+                        <p className="text-xs text-muted-foreground">
+                          {convo.attributions.length} score{convo.attributions.length > 1 ? "s" : ""}
+                        </p>
+                      )}
+                    </div>
+                  </CardContent>
+                </Card>
+              );
+            })}
           </div>
 
           <div className="flex items-center justify-center gap-4 mt-8">
@@ -289,104 +337,6 @@ export default function FeedbackPage() {
           </CardContent>
         </Card>
       )}
-
-      {/* Detail Dialog */}
-        <Dialog open={!!selectedConvo} onOpenChange={() => closeDialog()}>
-        {selectedConvo && (
-            <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
-            <DialogHeader>
-                <DialogTitle className="flex items-center gap-2">
-                Feedback #{selectedConvo.id}
-                <Badge variant={selectedConvo.enabled ? "default" : "secondary"}>
-                    {selectedConvo.enabled ? "Enabled" : "Disabled"}
-                </Badge>
-                </DialogTitle>
-            </DialogHeader>
-
-            <div className="grid md:grid-cols-2 gap-6 mt-4">
-                {/* Image */}
-                <div>
-                <img
-                    src={`/images/${selectedConvo.image_id}/file`}
-                    alt={`Image ${selectedConvo.image_id}`}
-                    className="w-full rounded-lg"
-                />
-                <div className="mt-2 flex items-center gap-2">
-                    <span className="text-sm text-muted-foreground">Attribution Score:</span>
-                    <Badge><Star className="h-3 w-3 mr-1" />{selectedConvo.attribution_score.toFixed(4)}</Badge>
-                </div>
-                </div>
-
-                {/* Content */}
-                <div className="space-y-4">
-                <div>
-                    <label className="text-sm font-medium">Prompt</label>
-                    <div className="mt-1 p-3 bg-muted rounded-lg text-sm">{selectedConvo.prompt}</div>
-                </div>
-
-                <div>
-                    <label className="text-sm font-medium">Model Response</label>
-                    <div className="mt-1 p-3 bg-muted rounded-lg text-sm max-h-40 overflow-y-auto">
-                    {selectedConvo.response}
-                    </div>
-                </div>
-
-                <div>
-                    <label className="text-sm font-medium">Your Feedback</label>
-                    <Textarea
-                    value={editedFeedback}
-                    onChange={(e) => setEditedFeedback(e.target.value)}
-                    className="mt-1"
-                    rows={4}
-                    />
-                </div>
-
-                <div className="flex items-center justify-between pt-4">
-                    <Button
-                    variant="outline"
-                    onClick={() => {
-                        updateMutation.mutate({
-                        id: selectedConvo.id,
-                        data: { enabled: !selectedConvo.enabled },
-                        });
-                        setSelectedConvo({ ...selectedConvo, enabled: !selectedConvo.enabled });
-                    }}
-                    >
-                    {selectedConvo.enabled ? <><X className="h-4 w-4 mr-2" />Disable</> : <><Check className="h-4 w-4 mr-2" />Enable</>}
-                    </Button>
-
-                    <div className="flex gap-2">
-                    <Button variant="outline" onClick={closeDialog}>Cancel</Button>
-                    <Button onClick={saveFeedback} disabled={updateMutation.isPending}>
-                        {updateMutation.isPending ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Check className="h-4 w-4 mr-2" />}
-                        Save
-                    </Button>
-                    </div>
-                </div>
-
-                <div className="text-xs text-muted-foreground pt-2">
-                    Model: {selectedConvo.model_name} • Task: {selectedConvo.task} • {new Date(selectedConvo.created_at).toLocaleString()}
-                </div>
-                </div>
-            </div>
-            </DialogContent>
-        )}
-        </Dialog>
-
-      {/* Image Lightbox */}
-      <Dialog open={lightboxOpen} onOpenChange={setLightboxOpen}>
-        <DialogContent className="max-w-[95vw] max-h-[95vh] p-2 bg-black/90">
-          {selectedConvo && (
-            <div className="flex items-center justify-center h-full">
-              <img
-                src={`/images/${selectedConvo.image_id}/file`}
-                alt={`Image ${selectedConvo.image_id}`}
-                className="max-w-full max-h-[90vh] object-contain"
-              />
-            </div>
-          )}
-        </DialogContent>
-      </Dialog>
     </main>
   );
 }

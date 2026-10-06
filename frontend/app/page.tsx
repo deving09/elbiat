@@ -1,7 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
+import { useAuth } from "@/lib/auth";
 import {
   Dialog,
   DialogContent,
@@ -14,11 +15,49 @@ import { Textarea } from "@/components/ui/textarea";
 
 export default function Home() {
   const router = useRouter();
+  const { isAuthenticated, isLoading, login } = useAuth();
   const [modal, setModal] = useState<"signin" | "request" | "contact" | null>(null);
+  
+  // Sign-in form state
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [error, setError] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+  
+  useEffect(() => {
+    if (!isLoading && isAuthenticated) {
+      router.push("/dashboard");
+    }
+  }, [isAuthenticated, isLoading, router]);
 
-  const handleSignIn = (e: React.FormEvent) => {
+  // Show nothing while checking auth (prevents flash)
+  if (isLoading || isAuthenticated) {
+    return null;
+  }
+
+  const handleSignIn = async (e: React.FormEvent) => {
     e.preventDefault();
-    router.push("/dashboard");
+    setError("");
+    setSubmitting(true);
+
+    try {
+      await login(email, password);
+      // useEffect handles redirect when isAuthenticated becomes true
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Invalid email or password");
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  // Reset form when modal closes
+  const handleModalChange = (open: boolean) => {
+    if (!open) {
+      setModal(null);
+      setEmail("");
+      setPassword("");
+      setError("");
+    }
   };
 
   return (
@@ -65,7 +104,7 @@ export default function Home() {
       </p>
 
       {/* Sign In Modal */}
-      <Dialog open={modal === "signin"} onOpenChange={() => setModal(null)}>
+      <Dialog open={modal === "signin"} onOpenChange={handleModalChange}>
         <DialogContent className="bg-zinc-900 border-zinc-800">
           <DialogHeader>
             <DialogTitle className="text-white">Sign In</DialogTitle>
@@ -77,6 +116,8 @@ export default function Home() {
                 type="email"
                 placeholder="you@example.com"
                 className="bg-zinc-950 border-zinc-800 text-white"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
                 required
               />
             </div>
@@ -86,11 +127,20 @@ export default function Home() {
                 type="password"
                 placeholder="••••••••"
                 className="bg-zinc-950 border-zinc-800 text-white"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
                 required
               />
             </div>
-            <Button type="submit" className="w-full bg-blue-600 hover:bg-blue-500">
-              Sign In
+            {error && (
+              <p className="text-red-500 text-sm">{error}</p>
+            )}
+            <Button 
+              type="submit" 
+              className="w-full bg-blue-600 hover:bg-blue-500"
+              disabled={submitting}
+            >
+              {submitting ? "Signing in..." : "Sign In"}
             </Button>
           </form>
         </DialogContent>
