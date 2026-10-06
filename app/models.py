@@ -237,6 +237,68 @@ class Convo(Base):
     )
     
 
+class ConvoFeedback(Base):
+    __tablename__ = "convo_feedback"
+    
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    convo_id: Mapped[int] = mapped_column(
+        Integer,
+        ForeignKey("convos.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    user_id: Mapped[int] = mapped_column(
+        Integer,
+        ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    turn_index: Mapped[int] = mapped_column(Integer, nullable=False)
+    
+    # Feedback data
+    thumbs: Mapped[Optional[str]] = mapped_column(String(10), nullable=True)
+    edit_original: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    edit_revised: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    
+    # Experiment tracking
+    experiment_bucket: Mapped[Optional[str]] = mapped_column(String(50), nullable=True, index=True)
+    available_actions: Mapped[Optional[list]] = mapped_column(JSONB, nullable=True)
+    
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        nullable=False,
+    )
+
+class ConvoComment(Base):
+    __tablename__ = "convo_comments"
+    
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    convo_id: Mapped[int] = mapped_column(
+        Integer,
+        ForeignKey("convos.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    user_id: Mapped[int] = mapped_column(
+        Integer,
+        ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    turn_index: Mapped[int] = mapped_column(Integer, nullable=False)
+    
+    text: Mapped[str] = mapped_column(Text, nullable=False)
+    experiment_bucket: Mapped[Optional[str]] = mapped_column(String(50), nullable=True, index=True)
+    
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        nullable=False,
+    )
+
+
+
 
 class Image(Base):
     __tablename__ = "images"
