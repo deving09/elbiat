@@ -1,0 +1,38 @@
+
+# Python
+__pycache__/
+*.pyc
+.ipynb_checkpoints/
+
+# Secrets
+_jwt_.txt
+*.env
+
+# Logs
+*.log
+
+# ML artifacts & data
+checkpoints/
+work_dirs/
+outputs/
+tracin_cache/
+tracin_results/
+eval_results/
+logix_logs/
+logix_results/
+elbiat_datasets/
+feedback_data/
+images/
+mochi/
+vpt/
+*.jsonl
+
+# Gradio
+.gradio/
+
+# Frontend build/deps
+frontend/.next/
+frontend/node_modules/
+
+# Archives
+*.tar.gz
