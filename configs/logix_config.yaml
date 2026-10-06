@@ -1,0 +1,13 @@
+project: elbiat_attribution
+root_dir: ./logix_logs
+
+logging:
+  flush_threshold: 1000000000
+  num_workers: 1
+  cpu_offload: False
+  log_dtype: none
+
+lora:
+  init: random
+  rank: 64
+  parameter_sharing: False
