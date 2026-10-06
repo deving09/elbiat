@@ -1,0 +1,42 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1254 1254">
+  <!-- Background -->
+  <rect width="1254" height="1254" fill="#000000"/>
+
+  <!-- Tabletop -->
+  <path d="M401 385
+           L847 385
+           L910 436
+           L910 471
+           L338 471
+           L338 436
+           Z"
+        fill="#1689F8"/>
+
+  <!-- Left leg -->
+  <path d="M430 489
+           L504 489
+           L408 823
+           Q404 846 382 848
+           L358 848
+           Q332 845 332 820
+           Z"
+        fill="#1689F8"/>
+
+  <!-- Hammer head -->
+  <path d="M677 517
+           L829 481
+           L876 541
+           L694 594
+           Z"
+        fill="#1689F8"/>
+
+  <!-- Hammer handle, separated from head by black gap -->
+  <path d="M746 595
+           L817 576
+           L894 816
+           Q901 843 876 848
+           L845 848
+           Q821 844 816 821
+           Z"
+        fill="#1689F8"/>
+</svg>
