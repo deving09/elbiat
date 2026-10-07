@@ -9,6 +9,8 @@ import { Card } from "@/components/ui/card";
 //import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
 import { getAccessToken } from "@/lib/api";
+import { FeedbackControls } from "@/components/chat/FeedbackControls";
+import { useAuth } from "@/lib/auth";
 import {
   Send,
   Image as ImageIcon,
@@ -17,9 +19,6 @@ import {
   Bot,
   Loader2,
   Globe,
-  ThumbsUp,
-  ThumbsDown,
-  Save,
   Grid3X3,  
 } from "lucide-react";
 
@@ -64,6 +63,7 @@ export default function ChatPage() {
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [imagePreview, setImagePreview] = useState<string | null>(null);
   const [isApplyingGrid, setIsApplyingGrid] = useState(false);
+  const [convoId, setConvoId] = useState<number | null>(null);
   const [isUploading, setIsUploading] = useState(false);
 
   const [isPickingRandom, setIsPickingRandom] = useState(false);
@@ -95,9 +95,10 @@ export default function ChatPage() {
 
   
   // Feedback
-  const [feedback, setFeedback] = useState("");
-  const [thumbs, setThumbs] = useState<"up" | "down" | null>(null);
-  const [saveStatus, setSaveStatus] = useState("");
+  // const [feedback, setFeedback] = useState("");
+  //const [thumbs, setThumbs] = useState<"up" | "down" | null>(null);
+  //const [saveStatus, setSaveStatus] = useState("");
+  const { user } = useAuth();
   
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -149,9 +150,6 @@ export default function ChatPage() {
       setMessages([]);
       setLastResponse("");
       setLastPrompt("");
-      setFeedback("");
-      setThumbs(null);
-      setSaveStatus("");
     } catch (e) {
       console.error(e);
       setMessages((prev) => [
@@ -401,9 +399,6 @@ export default function ChatPage() {
     setLastPrompt(input);
     setInput("");
     setIsLoading(true);
-    setFeedback("");
-    setThumbs(null);
-    setSaveStatus("");
 
     try {
       // Ingest image if we don't have an image_id yet
@@ -474,64 +469,6 @@ export default function ChatPage() {
     }
   };
 
-  const handleSaveConvo = async () => {
-    if (!imageId || !lastPrompt || !lastResponse) {
-      setSaveStatus("❌ Need image, prompt, and response before saving");
-      return;
-    }
-
-    const token = getAccessToken();
-    if (!token) {
-      setSaveStatus("❌ Please log in first");
-      return;
-    }
-
-    const conversations = [
-      { from: "human", value: `<image>\n${lastPrompt}` },
-      { from: "gpt", value: lastResponse },
-    ];
-
-    let feedbackText = feedback.trim();
-    if (thumbs) {
-      feedbackText = `[thumbs=${thumbs}] ${feedbackText}`;
-    }
-
-    const payload = {
-      image_id: imageId,
-      conversations,
-      model_name: "internvl2.5_2B",
-      model_type: "vlm",
-      task: "general_vqa",
-      feedback: feedbackText,
-      monetized: true,
-      enabled: true,
-    };
-
-    try {
-      const response = await fetch(CONVOS_ENDPOINT, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          ...getAuthHeaders(),
-        },
-        body: JSON.stringify(payload),
-      });
-
-      if (!response.ok) {
-        const error = await response.text();
-        throw new Error(error);
-      }
-
-      const data = await response.json();
-      setSaveStatus(`✅ Saved! convo_id=${data.convo_id || data.id}`);
-      setFeedback("");
-      setThumbs(null);
-
-    } catch (error) {
-      setSaveStatus(`❌ ${error instanceof Error ? error.message : "Save failed"}`);
-    }
-  };
-
   return (
     <main className="flex flex-col h-[calc(100vh-4rem)]">
       {imageId && imagePreview && (
@@ -580,24 +517,35 @@ export default function ChatPage() {
                     <Bot className="h-5 w-5 text-primary-foreground" />
                   </div>
                 )}
-                <Card
-                  className={cn(
-                    "max-w-[80%] p-4",
-                    message.role === "user"
-                      ? "bg-primary text-primary-foreground"
-                      : "bg-card"
-                  )}
-                >
-                  {message.imageUrl && (
-                    <img
-                      src={message.imageUrl}
-                      alt="Uploaded"
-                      className="max-w-full max-h-64 rounded-md mb-2 cursor-zoom-in"
-                      onClick={() => openImage(message.imageUrl!, "Message image")}
+                <div className="flex flex-col">
+                  <Card
+                    className={cn(
+                      "max-w-[80%] p-4",
+                      message.role === "user"
+                        ? "bg-primary text-primary-foreground"
+                        : "bg-card"
+                    )}
+                  >
+                    {message.imageUrl && (
+                      <img
+                        src={message.imageUrl}
+                        alt="Uploaded"
+                        className="max-w-full max-h-64 rounded-md mb-2 cursor-zoom-in"
+                        onClick={() => openImage(message.imageUrl!, "Message image")}
+                      />
+                    )}
+                    <p className="whitespace-pre-wrap">{message.content}</p>
+                  </Card>
+                  {message.role === "assistant" && user && (
+                    <FeedbackControls
+                      convoId={convoId ?? undefined}
+                      turnIndex={messages.findIndex(m => m.id === message.id)}
+                      messageContent={message.content}
+                      messages={messages.map(m => ({ role: m.role, content: m.content }))}
+                      onFeedbackSubmit={(newConvoId) => setConvoId(newConvoId)}
                     />
                   )}
-                  <p className="whitespace-pre-wrap">{message.content}</p>
-                </Card>
+                </div>
                 {message.role === "user" && (
                   <div className="flex-shrink-0 w-8 h-8 rounded-full bg-secondary flex items-center justify-center">
                     <User className="h-5 w-5 text-secondary-foreground" />
@@ -619,51 +567,6 @@ export default function ChatPage() {
           <div ref={messagesEndRef} />
         </div>
       </div>
-
-      {/* Feedback section (show after response) */}
-      {lastResponse && (
-        <div className="border-t bg-muted/30 p-4">
-          <div className="mx-auto max-w-3xl">
-            <div className="flex items-center gap-4 mb-2">
-              <span className="text-sm text-muted-foreground">Rate response:</span>
-              <Button
-                variant={thumbs === "up" ? "default" : "outline"}
-                size="sm"
-                onClick={() => setThumbs(thumbs === "up" ? null : "up")}
-              >
-                <ThumbsUp className="h-4 w-4" />
-              </Button>
-              <Button
-                variant={thumbs === "down" ? "default" : "outline"}
-                size="sm"
-                onClick={() => setThumbs(thumbs === "down" ? null : "down")}
-              >
-                <ThumbsDown className="h-4 w-4" />
-              </Button>
-            </div>
-            <div className="flex gap-2">
-              <Input
-                value={feedback}
-                onChange={(e) => setFeedback(e.target.value)}
-                placeholder="What was wrong/right about the answer?"
-                className="flex-1"
-              />
-              <Button onClick={handleSaveConvo}>
-                <Save className="h-4 w-4 mr-2" />
-                Save
-              </Button>
-            </div>
-            {saveStatus && (
-              <p className={cn(
-                "text-sm mt-2",
-                saveStatus.startsWith("✅") ? "text-green-600" : "text-destructive"
-              )}>
-                {saveStatus}
-              </p>
-            )}
-          </div>
-        </div>
-      )}
 
       {/* Input area */}
       <div className="border-t bg-background p-4">

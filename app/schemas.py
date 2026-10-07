@@ -132,3 +132,72 @@ class LeaderboardEntry(BaseModel):
     run_date: datetime
     #git_commit: Optional[str] = None
     status: str
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Chat Feedback schemas (experiment-based)
+# ─────────────────────────────────────────────────────────────────────────────
+
+class ChatFeedbackCreate(BaseModel):
+    convo_id: int
+    turn_index: int
+    thumbs: Optional[str] = None  # "up" or "down"
+    edit_original: Optional[str] = None
+    edit_revised: Optional[str] = None
+
+
+class ChatFeedbackResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    convo_id: int
+    user_id: int
+    turn_index: int
+    thumbs: Optional[str] = None
+    edit_original: Optional[str] = None
+    edit_revised: Optional[str] = None
+    experiment_bucket: Optional[str] = None
+    available_actions: Optional[list[str]] = None
+    created_at: datetime
+
+
+class ChatCommentCreate(BaseModel):
+    convo_id: int
+    turn_index: int
+    text: str
+
+
+class ChatCommentResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    convo_id: int
+    user_id: int
+    turn_index: int
+    text: str
+    experiment_bucket: Optional[str] = None
+    created_at: datetime
+
+
+class ChatMessage(BaseModel):
+    role: str  # "user" or "assistant"
+    content: str
+
+
+class FeedbackSubmit(BaseModel):
+    """Submit feedback, creating a ChatSession if needed."""
+    chat_session_id: Optional[int] = None  # None = create new session
+    messages: Optional[List[ChatMessage]] = None  # Required if chat_session_id is None
+    title: Optional[str] = None  # Optional title for new session
+    turn_index: int
+    thumbs: Optional[str] = None  # "up" or "down"
+    edit_original: Optional[str] = None
+    edit_revised: Optional[str] = None
+    comment_text: Optional[str] = None  # Optional comment in same submission
+
+
+class FeedbackSubmitResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    chat_session_id: int
+    feedback_id: int
+    comment_id: Optional[int] = None

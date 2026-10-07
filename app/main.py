@@ -22,6 +22,8 @@ from app.routes.evals import router as eval_router
 from app.routes.chat import router as chat_router  
 from app.routes.bulk_upload import router as bulk_router
 from app.routes.feedback import router as feedback_router
+from app.routes import chat_feedback
+
 
 """
 app = FastAPI(
@@ -37,6 +39,7 @@ app.include_router(eval_router)
 app.include_router(chat_router, prefix="/api")
 app.include_router(bulk_router)
 app.include_router(feedback_router, prefix="/api")
+app.include_router(chat_feedback.router)
 
 
 

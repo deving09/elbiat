@@ -46,6 +46,9 @@ class User(Base):
         index=True,
     )
 
+    chat_feedback: Mapped[list["ConvoFeedback"]] = relationship("ConvoFeedback", back_populates="user")
+    chat_comments: Mapped[list["ConvoComment"]] = relationship("ConvoComment", back_populates="user")
+
 
 
 class Task(Base):
@@ -235,7 +238,38 @@ class Convo(Base):
         nullable=False,
         index=True,
     )
-    
+
+    chat_feedback: Mapped[list["ConvoFeedback"]] = relationship("ConvoFeedback", back_populates="convo")
+    chat_comments: Mapped[list["ConvoComment"]] = relationship("ConvoComment", back_populates="convo")
+
+
+class ChatSession(Base):
+    """Stores chat conversations when user submits feedback (not image-based)."""
+    __tablename__ = "chat_sessions"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    user_id: Mapped[int] = mapped_column(
+        Integer,
+        ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    title: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    messages: Mapped[Optional[list]] = mapped_column(JSONB, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
+    )
+
+    feedback: Mapped[list["ConvoFeedback"]] = relationship(
+        "ConvoFeedback", back_populates="chat_session", foreign_keys="ConvoFeedback.chat_session_id"
+    )
+    comments: Mapped[list["ConvoComment"]] = relationship(
+        "ConvoComment", back_populates="chat_session", foreign_keys="ConvoComment.chat_session_id"
+    )
+
 
 class ConvoFeedback(Base):
     __tablename__ = "convo_feedback"
@@ -244,9 +278,19 @@ class ConvoFeedback(Base):
     convo_id: Mapped[int] = mapped_column(
         Integer,
         ForeignKey("convos.id", ondelete="CASCADE"),
-        nullable=False,
+        nullable=True,
         index=True,
     )
+
+    chat_session_id: Mapped[Optional[int]] = mapped_column(
+        Integer,
+        ForeignKey("chat_sessions.id", ondelete="CASCADE"),
+        nullable=True,
+        index=True,
+    )
+
+    
+
     user_id: Mapped[int] = mapped_column(
         Integer,
         ForeignKey("users.id", ondelete="CASCADE"),
@@ -263,7 +307,12 @@ class ConvoFeedback(Base):
     # Experiment tracking
     experiment_bucket: Mapped[Optional[str]] = mapped_column(String(50), nullable=True, index=True)
     available_actions: Mapped[Optional[list]] = mapped_column(JSONB, nullable=True)
-    
+
+    convo: Mapped["Convo"] = relationship("Convo", back_populates="chat_feedback")
+    user: Mapped["User"] = relationship("User", back_populates="chat_feedback")
+    chat_session: Mapped[Optional["ChatSession"]] = relationship(
+        "ChatSession", back_populates="feedback", foreign_keys=[chat_session_id]
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         server_default=func.now(),
@@ -277,9 +326,17 @@ class ConvoComment(Base):
     convo_id: Mapped[int] = mapped_column(
         Integer,
         ForeignKey("convos.id", ondelete="CASCADE"),
-        nullable=False,
+        nullable=True,
         index=True,
     )
+
+    chat_session_id: Mapped[Optional[int]] = mapped_column(
+        Integer,
+        ForeignKey("chat_sessions.id", ondelete="CASCADE"),
+        nullable=True,
+        index=True,
+    )
+
     user_id: Mapped[int] = mapped_column(
         Integer,
         ForeignKey("users.id", ondelete="CASCADE"),
@@ -296,8 +353,12 @@ class ConvoComment(Base):
         server_default=func.now(),
         nullable=False,
     )
-
-
+    
+    convo: Mapped["Convo"] = relationship("Convo", back_populates="chat_comments")
+    user: Mapped["User"] = relationship("User", back_populates="chat_comments")
+    chat_session: Mapped[Optional["ChatSession"]] = relationship(
+        "ChatSession", back_populates="comments", foreign_keys=[chat_session_id]
+    )
 
 
 class Image(Base):

@@ -15,6 +15,36 @@ export interface User {
   experiment_bucket: string | null;
 }
 
+
+export interface FeedbackConfig {
+  experiment_bucket: string | null;
+  available_actions: string[];
+}
+
+export interface ChatFeedback {
+  id: number;
+  convo_id: number;
+  user_id: number;
+  turn_index: number;
+  thumbs: string | null;
+  edit_original: string | null;
+  edit_revised: string | null;
+  experiment_bucket: string | null;
+  available_actions: string[] | null;
+  created_at: string;
+}
+
+export interface ChatComment {
+  id: number;
+  convo_id: number;
+  user_id: number;
+  turn_index: number;
+  text: string;
+  experiment_bucket: string | null;
+  created_at: string;
+}
+
+
 export interface Task {
   id: number;
   name: string;
@@ -162,8 +192,9 @@ export const api = {
     return { 
       access_token: data.access_token, 
       user: data.user 
-    };
+    };  
   },
+
 
   async register(email: string, username: string, password: string): Promise<{ access_token: string; user: User }> {
     // First, sign up
@@ -322,4 +353,66 @@ export const api = {
     if (!response.ok) throw new Error("Failed to update image");
     return response.json();
   },
+
+  async getChatFeedbackConfig(): Promise<FeedbackConfig> {
+    const response = await fetchWithAuth("/api/chat-feedback/config");
+    if (!response.ok) throw new Error("Failed to get feedback config");
+    return response.json();
+  },
+
+  async submitChatFeedback(data: {
+    chat_session_id?: number;
+    turn_index: number;
+    thumbs?: string;
+    edit_original?: string;
+    edit_revised?: string;
+  }): Promise<ChatFeedback> {
+    const response = await fetchWithAuth("/api/chat-feedback/", {
+      method: "POST",
+      body: JSON.stringify(data),
+    });
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(error.detail || "Failed to submit feedback");
+    }
+    return response.json();
+  },
+
+  async submitFeedback(data: {
+    chat_session_id?: number;
+    messages?: { role: string; content: string }[];
+    title?: string;
+    turn_index: number;
+    thumbs?: string;
+    edit_original?: string;
+    edit_revised?: string;
+    comment_text?: string;
+  }): Promise<{ chat_session_id: number; feedback_id: number; comment_id?: number }> {
+    const response = await fetchWithAuth("/api/chat-feedback/submit", {
+      method: "POST",
+      body: JSON.stringify(data),
+    });
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(error.detail || "Failed to submit feedback");
+    }
+    return response.json();
+  },
+
+  async submitChatComment(data: {
+    chat_session_id?: number;
+    turn_index: number;
+    text: string;
+  }): Promise<ChatComment> {
+    const response = await fetchWithAuth("/api/chat-feedback/comments", {
+      method: "POST",
+      body: JSON.stringify(data),
+    });
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(error.detail || "Failed to submit comment");
+    }
+    return response.json();
+  },
+
 };
