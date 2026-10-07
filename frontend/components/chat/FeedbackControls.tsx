@@ -35,6 +35,9 @@ export function FeedbackControls({
   const [currentSessionId, setCurrentSessionId] = useState<number | undefined>(chatSessionId);
   if (!user) return null;
 
+  // Track what's been submitted (so it stays visible)
+  const [submittedComment, setSubmittedComment] = useState<string | null>(null);
+
   const config = getFeedbackConfig(user.experiment_bucket);
 
   const handleThumbsClick = async (value: "up" | "down") => {
@@ -88,6 +91,8 @@ export function FeedbackControls({
         turn_index: turnIndex,
         comment_text: commentText.trim(),
       });
+
+      setSubmittedComment(commentText.trim());
       setCommentText("");
       setShowCommentInput(false);
       setCurrentSessionId(result.chat_session_id);
@@ -208,6 +213,25 @@ export function FeedbackControls({
           </div>
         </div>
       )}
+
+      {submittedComment && (
+        <div className="text-xs mt-2 p-2 bg-purple-50 dark:bg-purple-950 rounded border-l-2 border-purple-500">
+          <div className="flex justify-between items-start">
+            <span className="font-medium text-purple-700 dark:text-purple-300">Your comment:</span>
+            <button
+              onClick={() => {
+                setCommentText(submittedComment);
+                setShowCommentInput(true);
+              }}
+              className="text-purple-500 hover:underline text-xs"
+            >
+              revise
+            </button>
+          </div>
+          <p className="mt-1 text-gray-700 dark:text-gray-300">{submittedComment}</p>
+        </div>
+      )}
+
     </div>
   );
 }

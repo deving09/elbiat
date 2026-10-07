@@ -20,6 +20,8 @@ import {
   Loader2,
   Globe,
   Grid3X3,  
+  Paperclip,
+  Link,
 } from "lucide-react";
 
 // All calls go through Next.js proxy -> FastAPI
@@ -66,6 +68,10 @@ export default function ChatPage() {
   const [convoId, setConvoId] = useState<number | null>(null);
   const [isUploading, setIsUploading] = useState(false);
 
+  // Attachment menu state
+  const [showAttachMenu, setShowAttachMenu] = useState(false);
+  const [showUrlInput, setShowUrlInput] = useState(false);
+
   const [isPickingRandom, setIsPickingRandom] = useState(false);
 
 
@@ -85,8 +91,10 @@ export default function ChatPage() {
   const closeImage = () => {
     setExpandedSrc(null);
   };
-  
+  const attachMenuRef = useRef<HTMLDivElement>(null);
+
   // Backend state
+  
   const [imageId, setImageId] = useState<number | null>(null);
   const [historyState, setHistoryState] = useState<any>(null);
   const [lastResponse, setLastResponse] = useState<string>("");
@@ -102,6 +110,17 @@ export default function ChatPage() {
   
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Close attach menu when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (attachMenuRef.current && !attachMenuRef.current.contains(e.target as Node)) {
+        setShowAttachMenu(false);
+      }
+    };
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -236,6 +255,16 @@ export default function ChatPage() {
     return token ? { Authorization: `Bearer ${token}` } : {};
   };
 
+  const handleUrlSubmit = async () => {
+    if (!imageUrl.trim()) return;
+    setImagePreview(imageUrl);
+    setSelectedFile(null);
+    setImageId(null);
+    setHistoryState(null);
+    setShowUrlInput(false);
+    setShowAttachMenu(false);
+  };
+
   const handleImageSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -245,6 +274,7 @@ export default function ChatPage() {
     setImageId(null);
     setHistoryState(null);
 
+    setShowAttachMenu(false)
     // Show preview immediately
     const reader = new FileReader();
     reader.onload = (e) => {
@@ -254,6 +284,8 @@ export default function ChatPage() {
    
     // Auto-upload in background
     setIsUploading(true);
+
+
 
     try {
       const formData = new FormData();
@@ -568,110 +600,153 @@ export default function ChatPage() {
         </div>
       </div>
 
-      {/* Input area */}
+{/* Input area */}
       <div className="border-t bg-background p-4">
         <div className="mx-auto max-w-3xl">
-          {/* Image input */}
-          {!imageId && (
-            <div className="mb-3 flex gap-2 items-center">
+          {/* Image preview - compact chip */}
+          {imagePreview && (
+            <div className="mb-3 flex items-center gap-2">
+              <div className="relative group">
+                <img
+                  src={imagePreview}
+                  alt="Preview"
+                  className="h-16 w-16 object-cover rounded-lg border cursor-zoom-in"
+                  onClick={() => openImage(imagePreview, imageId ? `Image #${imageId}` : "Preview")}
+                />
+                <button
+                  onClick={removeImage}
+                  className="absolute -top-1.5 -right-1.5 p-0.5 rounded-full bg-destructive text-destructive-foreground hover:bg-destructive/90 opacity-0 group-hover:opacity-100 transition-opacity"
+                >
+                  <X className="h-3 w-3" />
+                </button>
+                {isUploading && (
+                  <div className="absolute inset-0 bg-black/50 rounded-lg flex items-center justify-center">
+                    <Loader2 className="h-4 w-4 animate-spin text-white" />
+                  </div>
+                )}
+              </div>
+              {imageId && (
+                <>
+                  <span className="text-xs text-muted-foreground">Image #{imageId}</span>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    onClick={applyGridOverlay}
+                    disabled={isLoading || isApplyingGrid}
+                    className="h-7 text-xs"
+                  >
+                    {isApplyingGrid ? (
+                      <Loader2 className="h-3 w-3 mr-1 animate-spin" />
+                    ) : (
+                      <Grid3X3 className="h-3 w-3 mr-1" />
+                    )}
+                    Grid
+                  </Button>
+                </>
+              )}
+            </div>
+          )}
+
+          {/* URL input popover */}
+          {showUrlInput && (
+            <div className="mb-3 flex gap-2 items-center p-3 bg-muted rounded-lg">
+              <Link className="h-4 w-4 text-muted-foreground flex-shrink-0" />
               <Input
                 value={imageUrl}
-                onChange={(e) => handleUrlChange(e.target.value)}
-                placeholder="Image URL (optional)"
-                className="flex-1"
-                disabled={!!selectedFile}
+                onChange={(e) => setImageUrl(e.target.value)}
+                placeholder="Paste image URL..."
+                className="flex-1 h-8"
+                autoFocus
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    e.preventDefault();
+                    handleUrlSubmit();
+                  } else if (e.key === "Escape") {
+                    setShowUrlInput(false);
+                    setImageUrl("");
+                  }
+                }}
               />
-              <span className="text-muted-foreground">or</span>
-              <input
-                type="file"
-                ref={fileInputRef}
-                onChange={handleImageSelect}
-                accept="image/*"
-                className="hidden"
-              />
-              <Button
-                type="button"
-                variant="outline"
-                onClick={() => fileInputRef.current?.click()}
-                disabled={!!imageUrl}
-              >
-                <ImageIcon className="h-4 w-4 mr-2" />
-                Upload
+              <Button size="sm" variant="ghost" onClick={handleUrlSubmit} className="h-8">
+                Add
               </Button>
+              <Button size="sm" variant="ghost" onClick={() => { setShowUrlInput(false); setImageUrl(""); }} className="h-8">
+                <X className="h-4 w-4" />
+              </Button>
+            </div>
+          )}
+
+          {/* Main input row */}
+          <form onSubmit={handleSubmit} className="flex items-center gap-2">
+            {/* Paperclip attachment button */}
+            <div className="relative" ref={attachMenuRef}>
               <Button
                 type="button"
-                variant="outline"
-                onClick={pickRandomPublicImage}
-                disabled={isLoading || isPickingRandom}
+                variant="ghost"
+                size="icon"
+                className="h-10 w-10 rounded-full"
+                onClick={() => setShowAttachMenu(!showAttachMenu)}
               >
-                {isPickingRandom ? (
-                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                ) : (
-                  <Globe className="h-4 w-4 mr-2" />
-                )}
-                Random Public
-            </Button>
-            
-            </div>
-           
-          )}
+                <Paperclip className="h-5 w-5 text-muted-foreground" />
+              </Button>
 
-          {/* Image preview */}
-          {imagePreview && (
-            <div className="mb-3 relative inline-block">
-              <img
-                src={imagePreview}
-                alt="Preview"
-                className="max-h-32 rounded-md border cursor-zoom-in"
-                onClick={() => openImage(imagePreview, imageId ? `Image #${imageId}` : "Preview")}
-              />
-              
-              {/* Always show X button to remove image */}
-              <button
-                onClick={removeImage}
-                className="absolute -top-2 -right-2 p-1 rounded-full bg-destructive text-destructive-foreground hover:bg-destructive/90"
-              >
-                <X className="h-4 w-4" />
-              </button>
-              
-              {/* Show ID badge if uploaded */}
-              {imageId && (
-                <span className="absolute -top-2 left-2 px-2 py-0.5 rounded-full bg-green-500 text-white text-xs">
-                  ID: {imageId}
-                </span>
+              {showAttachMenu && (
+                <div className="absolute bottom-12 left-0 bg-popover border rounded-lg shadow-lg py-1 min-w-[160px] z-10">
+                  <input
+                    type="file"
+                    ref={fileInputRef}
+                    onChange={handleImageSelect}
+                    accept="image/*"
+                    className="hidden"
+                  />
+                  <button
+                    type="button"
+                    className="w-full px-3 py-2 text-sm text-left hover:bg-muted flex items-center gap-2"
+                    onClick={() => fileInputRef.current?.click()}
+                  >
+                    <ImageIcon className="h-4 w-4" />
+                    Upload image
+                  </button>
+                  <button
+                    type="button"
+                    className="w-full px-3 py-2 text-sm text-left hover:bg-muted flex items-center gap-2"
+                    onClick={() => {
+                      setShowAttachMenu(false);
+                      setShowUrlInput(true);
+                    }}
+                  >
+                    <Link className="h-4 w-4" />
+                    Image URL
+                  </button>
+                  <button
+                    type="button"
+                    className="w-full px-3 py-2 text-sm text-left hover:bg-muted flex items-center gap-2"
+                    onClick={pickRandomPublicImage}
+                    disabled={isPickingRandom}
+                  >
+                    {isPickingRandom ? (
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                    ) : (
+                      <Globe className="h-4 w-4" />
+                    )}
+                    Random public image
+                  </button>
+                </div>
               )}
-              
-              {/* Grid button - show whenever there's an image preview */}
-              <div className="mt-2">
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  onClick={applyGridOverlay}
-                  disabled={isLoading || isApplyingGrid || !imageId}
-                  title={!imageId ? "Upload image first to add grid" : "Add grid overlay"}
-                >
-                  {isApplyingGrid ? (
-                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                  ) : (
-                    <Grid3X3 className="h-4 w-4 mr-2" />
-                  )}
-                  Add Grid
-                </Button>
-              </div>
             </div>
-          )}
 
-          {/* Prompt input */}
-          <form onSubmit={handleSubmit} className="flex items-center space-x-2">
+            {/* Text input */}
             <Input
               value={input}
               onChange={(e) => setInput(e.target.value)}
-              placeholder="Ask about the image..."
+              placeholder={imageId ? "Ask about the image..." : "Start a conversation..."}
               className="flex-1"
               disabled={isLoading}
             />
-            <Button type="submit" disabled={isLoading || !input.trim()}>
+
+            {/* Send button */}
+            <Button type="submit" size="icon" disabled={isLoading || !input.trim()} className="h-10 w-10 rounded-full">
               {isLoading ? (
                 <Loader2 className="h-5 w-5 animate-spin" />
               ) : (
@@ -680,21 +755,20 @@ export default function ChatPage() {
             </Button>
           </form>
 
-          {/* Reset button */}
-          {imageId && (
-            <Button
-              variant="ghost"
-              size="sm"
-              className="mt-2"
+          {/* New conversation link */}
+          {(imageId || messages.length > 0) && (
+            <button
+              className="mt-2 text-xs text-muted-foreground hover:text-foreground transition-colors"
               onClick={() => {
                 removeImage();
                 setMessages([]);
                 setLastResponse("");
                 setLastPrompt("");
+                setHistoryState(null);
               }}
             >
-              Start new conversation with different image
-            </Button>
+              Clear Chat
+            </button>
           )}
         </div>
       </div>
