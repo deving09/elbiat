@@ -62,27 +62,13 @@ export default function Home() {
 
   return (
     <main className="min-h-screen bg-black flex flex-col items-center justify-center relative">
-      {/* Navigation */}
-      <nav className="absolute top-8 right-8 flex flex-col items-end gap-4">
-        <button
-          onClick={() => setModal("signin")}
-          className="text-[#1689F8] hover:text-blue-400 font-medium transition-colors"
-        >
-          Sign In
-        </button>
-        <button
-          onClick={() => setModal("request")}
-          className="text-[#1689F8] hover:text-blue-400 font-medium transition-colors text-right"
-        >
-          Request<br />Access
-        </button>
-        <button
-          onClick={() => setModal("contact")}
-          className="text-[#1689F8] hover:text-blue-400 font-medium transition-colors"
-        >
-          Contact Team
-        </button>
-      </nav>
+       {/* Contact - subtle top right */}
+      <button
+        onClick={() => setModal("contact")}
+        className="absolute top-8 right-8 text-white/50 hover:text-white text-sm transition-colors"
+      >
+        Contact
+      </button>
 
       {/* Logo section */}
       <div className="flex items-center gap-0 -mb-10">
@@ -102,6 +88,22 @@ export default function Home() {
       <p className="text-white text-xl md:text-2xl font-light">
         Building a collaborative AI future
       </p>
+
+       {/* CTAs */}
+      <div className="mt-10 flex items-center gap-4">
+        <button
+          onClick={() => setModal("signin")}
+          className="px-6 py-2.5 bg-[#1689F8] hover:bg-blue-500 text-white font-medium rounded-lg transition-colors"
+        >
+          Sign In
+        </button>
+        <button
+          onClick={() => setModal("request")}
+          className="px-6 py-2.5 border border-white/20 hover:border-white/40 text-white font-medium rounded-lg transition-colors"
+        >
+          Request Access
+        </button>
+      </div>
 
       {/* Sign In Modal */}
       <Dialog open={modal === "signin"} onOpenChange={handleModalChange}>
