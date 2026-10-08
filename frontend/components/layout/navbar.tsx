@@ -15,22 +15,43 @@ import {
   Menu,
   X,
   Upload,
+  ChevronDown,
+  HelpCircle,
+  MessageCircleQuestion,
 } from "lucide-react";
-import { useState } from "react";
+import { useState, useRef, useEffect } from "react";
 
 const navigation = [
   { name: "Dashboard", href: "/", icon: LayoutDashboard },
-  { name: "Chat", href: "/chat", icon: MessageSquare },
   { name: "Tasks", href: "/tasks", icon: Trophy },
   { name: "Gallery", href: "/gallery", icon: ImageIcon },
   { name: "Upload", href: "/upload", icon: Upload },  // Add this
   { name: "Feedback", href: "/feedback", icon: MessageSquareText },
 ];
 
+const chatSubmenu = [
+  { name: "Chat", href: "/chat", icon: MessageSquare },
+  { name: "Ask", href: "/ask", icon: HelpCircle },
+  { name: "Answer", href: "/answer", icon: MessageCircleQuestion },
+];
+
 export function Navbar() {
   const pathname = usePathname();
   const { user, logout, isAuthenticated } = useAuth();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [chatMenuOpen, setChatMenuOpen] = useState(false);
+  const chatMenuRef = useRef<HTMLDivElement>(null);
+
+  // Close chat dropdown when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (chatMenuRef.current && !chatMenuRef.current.contains(e.target as Node)) {
+        setChatMenuOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
 
   if (!isAuthenticated) return null;
 
@@ -48,7 +69,59 @@ export function Navbar() {
 
           {/* Desktop Navigation */}
           <div className="hidden md:flex md:items-center md:space-x-1">
-            {navigation.map((item) => {
+            {/* Dashboard link (first item) */}
+            <Link
+              href="/"
+              className={cn(
+                "flex items-center space-x-2 rounded-md px-3 py-2 text-sm font-medium transition-colors",
+                pathname === "/"
+                  ? "bg-primary/10 text-primary"
+                  : "text-muted-foreground hover:bg-accent hover:text-accent-foreground"
+              )}
+            >
+              <LayoutDashboard className="h-4 w-4" />
+              <span>Dashboard</span>
+            </Link>
+
+            {/* Chat dropdown */}
+            <div className="relative" ref={chatMenuRef}>
+              <button
+                className={cn(
+                  "flex items-center space-x-2 rounded-md px-3 py-2 text-sm font-medium transition-colors",
+                  pathname.startsWith("/chat") || pathname.startsWith("/ask") || pathname.startsWith("/answer")
+                    ? "bg-primary/10 text-primary"
+                    : "text-muted-foreground hover:bg-accent hover:text-accent-foreground"
+                )}
+                onClick={() => setChatMenuOpen(!chatMenuOpen)}
+                onDoubleClick={() => window.location.href = "/chat"}
+              >
+                <MessageSquare className="h-4 w-4" />
+                <span>Chat</span>
+                <ChevronDown className={cn("h-3 w-3 transition-transform", chatMenuOpen && "rotate-180")} />
+              </button>
+
+              {chatMenuOpen && (
+                <div className="absolute top-full left-0 mt-1 bg-popover border rounded-lg shadow-lg py-1 min-w-[140px] z-50">
+                  {chatSubmenu.map((item) => (
+                    <Link
+                      key={item.name}
+                      href={item.href}
+                      className={cn(
+                        "flex items-center space-x-2 px-3 py-2 text-sm hover:bg-muted",
+                        pathname === item.href && "bg-muted text-primary"
+                      )}
+                      onClick={() => setChatMenuOpen(false)}
+                    >
+                      <item.icon className="h-4 w-4" />
+                      <span>{item.name}</span>
+                    </Link>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* Rest of navigation (skip Dashboard, already rendered) */}
+            {navigation.slice(1).map((item) => {
               const isActive = pathname === item.href || 
                 (item.href !== "/" && pathname.startsWith(item.href));
               return (
@@ -101,7 +174,41 @@ export function Navbar() {
       {mobileMenuOpen && (
         <div className="md:hidden border-t border-border">
           <div className="space-y-1 px-4 py-3">
-            {navigation.map((item) => {
+            {/* Dashboard */}
+            <Link
+              href="/"
+              className={cn(
+                "flex items-center space-x-3 rounded-md px-3 py-2 text-base font-medium",
+                pathname === "/"
+                  ? "bg-primary/10 text-primary"
+                  : "text-muted-foreground hover:bg-accent"
+              )}
+              onClick={() => setMobileMenuOpen(false)}
+            >
+              <LayoutDashboard className="h-5 w-5" />
+              <span>Dashboard</span>
+            </Link>
+
+            {/* Chat submenu items */}
+            {chatSubmenu.map((item) => (
+              <Link
+                key={item.name}
+                href={item.href}
+                className={cn(
+                  "flex items-center space-x-3 rounded-md px-3 py-2 text-base font-medium",
+                  pathname === item.href
+                    ? "bg-primary/10 text-primary"
+                    : "text-muted-foreground hover:bg-accent"
+                )}
+                onClick={() => setMobileMenuOpen(false)}
+              >
+                <item.icon className="h-5 w-5" />
+                <span>{item.name}</span>
+              </Link>
+            ))}
+
+            {/* Rest of navigation (Tasks, Gallery, Upload, Feedback) */}
+            {navigation.slice(1).map((item) => {
               const isActive = pathname === item.href ||
                 (item.href !== "/" && pathname.startsWith(item.href));
               return (
