@@ -201,3 +201,13 @@ class FeedbackSubmitResponse(BaseModel):
     chat_session_id: int
     feedback_id: int
     comment_id: Optional[int] = None
+
+
+class QuestionOut(BaseModel):
+    id: int
+    image_id: int
+    image_path: str
+    question_text: str
+
+class AnswerCreate(BaseModel):
+    answer_text: str

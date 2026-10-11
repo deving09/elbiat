@@ -590,3 +590,52 @@ class DataAttribution(Base):
         UniqueConstraint("convo_id", "checkpoint_id", "benchmark", "method", 
                         name="uq_attribution_convo_checkpoint_benchmark_method"),
     )
+
+
+
+class Question(Base):
+    __tablename__ = "questions"
+    
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    image_id: Mapped[int] = mapped_column(
+        Integer,
+        ForeignKey("images.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    question_text: Mapped[str] = mapped_column(Text, nullable=False)
+    generated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        nullable=False,
+    )
+    
+    image: Mapped["Image"] = relationship()
+    answers: Mapped[list["UserAnswer"]] = relationship(back_populates="question")
+
+
+class UserAnswer(Base):
+    __tablename__ = "user_answers"
+    
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    question_id: Mapped[int] = mapped_column(
+        Integer,
+        ForeignKey("questions.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    user_id: Mapped[int] = mapped_column(
+        Integer,
+        ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    answer_text: Mapped[str] = mapped_column(Text, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        nullable=False,
+    )
+    
+    question: Mapped["Question"] = relationship(back_populates="answers")
+    user: Mapped["User"] = relationship()

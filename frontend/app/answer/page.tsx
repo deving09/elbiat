@@ -17,17 +17,7 @@ import {
 
 const RANDOM_PUBLIC_IMAGE = "/images/random_public";
 
-// Placeholder questions until backend is ready
-const PLACEHOLDER_QUESTIONS = [
-  "How many objects of the same color are in this image?",
-  "What activity might happen next based on what you see?",
-  "Describe the spatial relationship between the main objects.",
-  "What time of day does this image appear to be taken?",
-  "What is unusual or unexpected about this image?",
-  "If you were in this scene, what would you hear?",
-  "What happened just before this image was captured?",
-  "How would you describe the mood or atmosphere?",
-];
+
 
 export default function AnswerPage() {
   const [imagePreview, setImagePreview] = useState<string | null>(null);
@@ -52,24 +42,18 @@ export default function AnswerPage() {
       setSubmitted(false);
       setAnswer("");
 
-      const resp = await fetch(RANDOM_PUBLIC_IMAGE, {
+      const resp = await fetch("/api/questions/next", {
         headers: getAuthHeaders(),
       });
 
       if (!resp.ok) {
-        throw new Error("Failed to fetch random image");
+        throw new Error("Failed to fetch question");
       }
 
-      const img = await resp.json();
-      const id = Number(img.id);
-      if (!Number.isFinite(id)) throw new Error("Bad image payload");
-
-      setImageId(id);
-      setImagePreview(img.file_url ?? `/images/${id}/file`);
-
-      // Pick a random placeholder question
-      const randomQ = PLACEHOLDER_QUESTIONS[Math.floor(Math.random() * PLACEHOLDER_QUESTIONS.length)];
-      setQuestion(randomQ);
+      const data = await resp.json();
+      setImageId(data.image_id);
+      setImagePreview(data.image_path ? `/images/${data.image_id}/file` : null);
+      setQuestion(data.question_text);
     } catch (e) {
       console.error(e);
     } finally {
@@ -87,12 +71,26 @@ export default function AnswerPage() {
 
     setIsSubmitting(true);
 
-    // TODO: Send answer to backend when ready
-    // For now, just simulate submission
-    await new Promise((resolve) => setTimeout(resolve, 500));
+    try {
+      const resp = await fetch(`/api/questions/${imageId}/answer`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...getAuthHeaders(),
+        },
+        body: JSON.stringify({ answer_text: answer }),
+      });
 
-    setSubmitted(true);
-    setIsSubmitting(false);
+      if (!resp.ok) {
+        throw new Error("Failed to submit answer");
+      }
+
+      setSubmitted(true);
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   return (
@@ -100,10 +98,6 @@ export default function AnswerPage() {
       {/* Header */}
       <div className="border-b bg-muted/30 p-4">
         <div className="mx-auto max-w-3xl">
-          <div className="flex items-center gap-2 text-amber-600 dark:text-amber-400 mb-3">
-            <Construction className="h-4 w-4" />
-            <span className="text-sm font-medium">Coming Soon — Backend in development</span>
-          </div>
           <h1 className="text-lg font-semibold flex items-center gap-2">
             <MessageCircleQuestion className="h-5 w-5" />
             Answer a Question
@@ -196,17 +190,21 @@ export default function AnswerPage() {
       {/* Image lightbox */}
       {expandedSrc && (
         <div
-          className="fixed inset-0 z-50 bg-black/80 flex items-center justify-center p-4"
+          className="fixed inset-0 z-50 bg-black/80 flex items-start justify-center p-4 overflow-y-auto"
           onClick={() => setExpandedSrc(null)}
         >
-          <div className="relative max-w-4xl w-full" onClick={(e) => e.stopPropagation()}>
+          <div className="relative max-w-6xl w-full my-8" onClick={(e) => e.stopPropagation()}>
             <button
               onClick={() => setExpandedSrc(null)}
-              className="absolute top-2 right-2 bg-white/10 hover:bg-white/20 text-white rounded-full p-2"
+              className="absolute top-2 right-2 bg-white/10 hover:bg-white/20 text-white rounded-full p-2 z-10"
             >
               <X className="h-5 w-5" />
             </button>
-            <img src={expandedSrc} alt="Expanded" className="w-full h-auto rounded-lg" />
+            <img 
+              src={expandedSrc} 
+              alt="Expanded" 
+              className="w-full h-auto max-h-none rounded-lg" 
+            />
           </div>
         </div>
       )}
