@@ -494,17 +494,20 @@ export default function AskPage() {
       {/* Image lightbox */}
       {expandedSrc && (
         <div
-          className="fixed inset-0 z-50 bg-black/80 flex items-center justify-center p-4"
+          className="fixed inset-0 z-50 bg-black/80 flex items-start justify-center p-4 overflow-y-auto"
           onClick={() => setExpandedSrc(null)}
         >
-          <div className="relative max-w-4xl w-full" onClick={(e) => e.stopPropagation()}>
-            <button
-              onClick={() => setExpandedSrc(null)}
-              className="absolute top-2 right-2 bg-white/10 hover:bg-white/20 text-white rounded-full p-2"
-            >
-              <X className="h-5 w-5" />
-            </button>
-            <img src={expandedSrc} alt="Expanded" className="w-full h-auto rounded-lg" />
+          <button
+            onClick={() => setExpandedSrc(null)}
+            className="fixed top-4 right-4 bg-white/10 hover:bg-white/20 text-white rounded-full p-2 z-50"
+          >
+            <X className="h-5 w-5" />
+          </button>
+          <div
+            className="relative max-w-6xl w-full my-8"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <img src={expandedSrc} alt="Expanded" className="w-full h-auto max-h-none rounded-lg" />
           </div>
         </div>
       )}
