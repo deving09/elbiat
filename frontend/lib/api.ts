@@ -112,6 +112,43 @@ export interface Image {
   user_id: number;
 }
 
+// Adaptations
+export interface UserAdaptation {
+  id: number;
+  user_id: number;
+  base_model_id: number;
+  level: "rag" | "soft_prompt" | "lora";
+  status: "pending" | "training" | "ready" | "failed";
+  artifact_path: string | null;
+  config: Record<string, any> | null;
+  metrics: Record<string, any> | null;
+  contribution_count: number;
+  created_at: string;
+  last_trained_at: string | null;
+}
+
+export interface ComparisonResponse {
+  image_id: number;
+  prompt: string;
+  base_response: string;
+  adapted_response: string;
+  adaptation_level: string;
+  adaptation_id: number;
+}
+
+export interface ComparisonFeedback {
+  id: number;
+  user_id: number;
+  image_id: number;
+  adaptation_id: number;
+  prompt: string;
+  preference: string | null;
+  base_thumbs: string | null;
+  adapted_thumbs: string | null;
+  created_at: string;
+}
+
+
 // Token management
 let accessToken: string | null = null;
 
@@ -412,6 +449,90 @@ export const api = {
       const error = await response.json();
       throw new Error(error.detail || "Failed to submit comment");
     }
+    return response.json();
+  },
+
+  // Adaptations
+  async getAdaptations(options?: {
+    level?: string;
+    status?: string;
+  }): Promise<UserAdaptation[]> {
+    const params = new URLSearchParams();
+    if (options?.level) params.set("level", options.level);
+    if (options?.status) params.set("status", options.status);
+    const response = await fetchWithAuth(`/api/adaptations/?${params}`);
+    if (!response.ok) throw new Error("Failed to fetch adaptations");
+    return response.json();
+  },
+
+  async triggerAdaptation(data: {
+    level: "rag" | "soft_prompt" | "lora";
+    base_model_id: number;
+    config?: Record<string, any>;
+  }): Promise<UserAdaptation> {
+    const response = await fetchWithAuth("/api/adaptations/trigger", {
+      method: "POST",
+      body: JSON.stringify(data),
+    });
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(error.detail || "Failed to trigger adaptation");
+    }
+    return response.json();
+  },
+
+  async deleteAdaptation(adaptationId: number): Promise<void> {
+    const response = await fetchWithAuth(`/api/adaptations/${adaptationId}`, {
+      method: "DELETE",
+    });
+    if (!response.ok) throw new Error("Failed to delete adaptation");
+  },
+
+  // Comparison
+  async runComparison(data: {
+    image_id: number;
+    prompt: string;
+    adaptation_id?: number;
+  }): Promise<ComparisonResponse> {
+    const response = await fetchWithAuth("/api/comparison/run", {
+      method: "POST",
+      body: JSON.stringify(data),
+    });
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(error.detail || "Failed to run comparison");
+    }
+    return response.json();
+  },
+
+  async submitComparisonFeedback(data: {
+    image_id: number;
+    adaptation_id: number;
+    prompt: string;
+    base_response: string;
+    adapted_response: string;
+    preference?: string;
+    base_thumbs?: string;
+    adapted_thumbs?: string;
+    base_edit?: string;
+    adapted_edit?: string;
+    comment?: string;
+  }): Promise<ComparisonFeedback> {
+    const response = await fetchWithAuth("/api/comparison/feedback", {
+      method: "POST",
+      body: JSON.stringify(data),
+    });
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(error.detail || "Failed to submit feedback");
+    }
+    return response.json();
+  },
+
+  async getComparisonFeedback(adaptationId?: number): Promise<ComparisonFeedback[]> {
+    const params = adaptationId ? `?adaptation_id=${adaptationId}` : "";
+    const response = await fetchWithAuth(`/api/comparison/feedback${params}`);
+    if (!response.ok) throw new Error("Failed to get comparison feedback");
     return response.json();
   },
 

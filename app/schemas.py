@@ -1,7 +1,7 @@
 from pydantic import BaseModel, EmailStr, Field, ConfigDict
 from typing import List, Dict, Optional
 
-from .models import EvalStatus
+from .models import EvalStatus, AdaptationLevel, AdaptationStatus
 
 from datetime import datetime
 
@@ -211,3 +211,115 @@ class QuestionOut(BaseModel):
 
 class AnswerCreate(BaseModel):
     answer_text: str
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# User Adaptation schemas
+# ─────────────────────────────────────────────────────────────────────────────
+
+class TriggerAdaptationRequest(BaseModel):
+    """Request to create/trigger a user adaptation."""
+    level: AdaptationLevel
+    base_model_id: int
+    config: Optional[Dict] = None  # Method-specific config
+
+
+class UserAdaptationResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    user_id: int
+    base_model_id: int
+    level: str
+    status: str
+    artifact_path: Optional[str] = None
+    config: Optional[Dict] = None
+    metrics: Optional[Dict] = None
+    contribution_count: int
+    created_at: datetime
+    last_trained_at: Optional[datetime] = None
+
+
+class UserAdaptationSummary(BaseModel):
+    """Lightweight version for listings."""
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    level: str
+    status: str
+    contribution_count: int
+    last_trained_at: Optional[datetime] = None
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Image Embedding schemas
+# ─────────────────────────────────────────────────────────────────────────────
+
+class ImageEmbeddingOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    image_id: int
+    model_name: str
+    created_at: datetime
+    # Note: embedding itself usually too large to return in API
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Side-by-side comparison schemas
+# ─────────────────────────────────────────────────────────────────────────────
+
+class ComparisonRequest(BaseModel):
+    """Request side-by-side inference."""
+    image_id: int
+    prompt: str
+    adaptation_id: Optional[int] = None  # If None, use user's default/latest
+
+
+class ComparisonResponse(BaseModel):
+    """Side-by-side model outputs."""
+    image_id: int
+    prompt: str
+    base_response: str
+    adapted_response: str
+    adaptation_level: str
+    adaptation_id: int
+
+
+class ComparisonFeedbackCreate(BaseModel):
+    """Feedback on a side-by-side comparison."""
+    image_id: int
+    adaptation_id: int
+    prompt: str
+    base_response: str
+    adapted_response: str
+    
+    # Preference: which was better?
+    preference: Optional[str] = None  # "base", "adapted", "tie"
+    
+    # Per-response feedback (optional)
+    base_thumbs: Optional[str] = None  # "up" / "down"
+    adapted_thumbs: Optional[str] = None
+    
+    # Edits (optional)
+    base_edit: Optional[str] = None
+    adapted_edit: Optional[str] = None
+    
+    # Free-form comment
+    comment: Optional[str] = None
+
+
+class ComparisonFeedbackResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    
+    id: int
+    user_id: int
+    image_id: int
+    adaptation_id: int
+    prompt: str
+    base_response: Optional[str] = None 
+    adapted_response: Optional[str] = None
+    preference: Optional[str] = None
+    base_thumbs: Optional[str] = None
+    adapted_thumbs: Optional[str] = None
+    created_at: datetime

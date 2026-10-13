@@ -124,6 +124,12 @@ class Models(Base):
     is_finetuned: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     base_model: Mapped[Optional[str]] = mapped_column(String(200), nullable=True)
 
+    # Allows for different types of updates to be cleanly tracked
+    adapter_type: Mapped[Optional[str]] = mapped_column(
+        String(50),  # "lora", "full", None for base
+        nullable=True,
+    )
+
 
 
 
@@ -639,3 +645,141 @@ class UserAnswer(Base):
     
     question: Mapped["Question"] = relationship(back_populates="answers")
     user: Mapped["User"] = relationship()
+
+
+
+class AdaptationLevel(str, enum.Enum):
+    RAG = "rag"
+    SOFT_PROMPT = "soft_prompt"
+    LORA = "lora"
+
+class AdaptationStatus(str, enum.Enum):
+    PENDING = "pending"
+    TRAINING = "training"
+    READY = "ready"
+    FAILED = "failed"
+
+class UserAdaptation(Base):
+    __tablename__ = "user_adaptations"
+    
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    user_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False, index=True
+    )
+    
+    base_model_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("models.id", ondelete="CASCADE"),
+        nullable=False, index=True
+    )
+    
+    level: Mapped[AdaptationLevel] = mapped_column(Enum(AdaptationLevel), nullable=False)
+    status: Mapped[AdaptationStatus] = mapped_column(
+        Enum(AdaptationStatus), default=AdaptationStatus.PENDING
+    )
+    
+    # Where artifacts live (soft prompts, LoRA weights)
+    artifact_path: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
+    
+    # Method-specific config (learning rate, rank for LoRA, etc.)
+    config: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
+    
+    # Quality metrics post-training
+    metrics: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
+    
+    # How many data points went into this
+    contribution_count: Mapped[int] = mapped_column(Integer, default=0)
+    
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    last_trained_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    
+    comparison_feedback: Mapped[list["ComparisonFeedback"]] = relationship(
+        "ComparisonFeedback", back_populates="adaptation"
+    )
+
+
+class ComparisonFeedback(Base):
+    """
+    Stores feedback from side-by-side comparison view.
+    Captures preference data (which response was better) plus per-response feedback.
+    """
+    __tablename__ = "comparison_feedback"
+    
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    
+    user_id: Mapped[int] = mapped_column(
+        Integer,
+        ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    
+    # What was compared
+    image_id: Mapped[int] = mapped_column(
+        Integer,
+        ForeignKey("images.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    adaptation_id: Mapped[int] = mapped_column(
+        Integer,
+        ForeignKey("user_adaptations.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    prompt: Mapped[str] = mapped_column(Text, nullable=False)
+    
+    # The actual responses (stored for reproducibility)
+    base_response: Mapped[str] = mapped_column(Text, nullable=False)
+    adapted_response: Mapped[str] = mapped_column(Text, nullable=False)
+    
+    # Preference: "base", "adapted", "tie"
+    preference: Mapped[Optional[str]] = mapped_column(String(20), nullable=True)
+    
+    # Per-response thumbs: "up" / "down"
+    base_thumbs: Mapped[Optional[str]] = mapped_column(String(10), nullable=True)
+    adapted_thumbs: Mapped[Optional[str]] = mapped_column(String(10), nullable=True)
+    
+    # Edits
+    base_edit: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    adapted_edit: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    
+    # Free-form comment
+    comment: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        nullable=False,
+        index=True,
+    )
+    
+    # Relationships
+    user: Mapped["User"] = relationship("User")
+    image: Mapped["Image"] = relationship("Image")
+    adaptation: Mapped["UserAdaptation"] = relationship("UserAdaptation", back_populates="comparison_feedback")
+
+
+
+class ImageEmbedding(Base):
+    __tablename__ = "image_embeddings"
+    
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    image_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("images.id", ondelete="CASCADE"),
+        nullable=False, index=True
+    )
+    
+    model_name: Mapped[str] = mapped_column(String(100), nullable=False)  # "clip-vit-l-14", etc.
+    
+    # If using pgvector:
+    # embedding: Mapped[list] = mapped_column(Vector(768), nullable=False)
+    
+    # If storing as JSONB (slower but no extension):
+    embedding: Mapped[list] = mapped_column(JSONB, nullable=False)
+    
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    
+    __table_args__ = (
+        UniqueConstraint("image_id", "model_name", name="uq_image_embedding_model"),
+    )
