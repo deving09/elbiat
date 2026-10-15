@@ -130,36 +130,6 @@ def run_comparison(
     )
 
 
-@router.post("/feedback", response_model=ComparisonFeedbackResponse, status_code=status.HTTP_201_CREATED)
-def submit_comparison_feedback(
-    feedback_in: ComparisonFeedbackCreate,
-    db: Session = Depends(get_db),
-    current_user: models.User = Depends(get_current_user),
-):
-    """Submit feedback on a comparison."""
-    # For now, we'll need image_id and adaptation_id from the request
-    # The schema has comparison_id but we should refactor to use image_id + adaptation_id
-    
-    feedback = models.ComparisonFeedback(
-        user_id=current_user.id,
-        image_id=feedback_in.comparison_id,  # TODO: refactor schema
-        adaptation_id=1,  # TODO: get from request
-        prompt="",  # TODO: get from request
-        base_response="",  # TODO: store from comparison
-        adapted_response="",  # TODO: store from comparison
-        preference=feedback_in.preference,
-        base_thumbs=feedback_in.base_thumbs,
-        adapted_thumbs=feedback_in.adapted_thumbs,
-        base_edit=feedback_in.base_edit,
-        adapted_edit=feedback_in.adapted_edit,
-        comment=feedback_in.comment,
-    )
-    db.add(feedback)
-    db.commit()
-    db.refresh(feedback)
-    
-    return feedback
-
 
 @router.post("/feedback", response_model=ComparisonFeedbackResponse, status_code=status.HTTP_201_CREATED)
 def submit_comparison_feedback(

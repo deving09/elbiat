@@ -63,7 +63,7 @@ export default function ComparePage() {
   // Load user's ready adaptations
   useEffect(() => {
     if (!user) return;
-    api.getAdaptations(undefined, "ready").then(setAdaptations).catch(console.error);
+    api.getAdaptations({ status: "ready" }).then(setAdaptations).catch(console.error);
   }, [user]);
 
   const getAuthHeaders = (): Record<string, string> => {
@@ -134,14 +134,14 @@ export default function ComparePage() {
         preference: preference ?? undefined,
         base_thumbs: baseThumbs ?? undefined,
         adapted_thumbs: adaptedThumbs ?? undefined,
-        edit_target: editTarget ?? undefined,
-        edit_original: editTarget ? (editTarget === "base" ? comparison.base_response : comparison.adapted_response) : undefined,
-        edit_revised: editTarget ? editText : undefined,
+        base_edit: editTarget === "base" ? editText : undefined,
+        adapted_edit: editTarget === "adapted" ? editText : undefined,
         comment: comment || undefined,
       });
       setFeedbackSubmitted(true);
     } catch (e) {
       console.error(e);
+      setRunError(e instanceof Error ? e.message : "Failed to submit feedback");
     } finally {
       setIsSubmitting(false);
     }
@@ -222,7 +222,7 @@ export default function ComparePage() {
                 <option value="">Latest ready adaptation</option>
                 {adaptations.map((a) => (
                   <option key={a.id} value={a.id}>
-                    {a.level.toUpperCase()} (#{a.id})
+                    {a.config?.model ?? a.level.toUpperCase()} · {a.level} (#{a.id})
                   </option>
                 ))}
               </select>
