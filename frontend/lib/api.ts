@@ -117,7 +117,7 @@ export interface UserAdaptation {
   id: number;
   user_id: number;
   base_model_id: number;
-  level: "rag" | "soft_prompt" | "lora";
+  level: "rag" | "soft_prompt" | "lora"| "full";
   status: "pending" | "training" | "ready" | "failed";
   artifact_path: string | null;
   config: Record<string, any> | null;
@@ -142,6 +142,8 @@ export interface ComparisonFeedback {
   image_id: number;
   adaptation_id: number;
   prompt: string;
+  base_response?: string;      // optional, for samples page
+  adapted_response?: string;   // optional, for samples page
   preference: string | null;
   base_thumbs: string | null;
   adapted_thumbs: string | null;
@@ -466,7 +468,7 @@ export const api = {
   },
 
   async triggerAdaptation(data: {
-    level: "rag" | "soft_prompt" | "lora";
+    level: "rag" | "soft_prompt" | "lora" | "full";
     base_model_id: number;
     config?: Record<string, any>;
   }): Promise<UserAdaptation> {

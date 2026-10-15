@@ -37,12 +37,14 @@ export default function ComparePage() {
   const [imageId, setImageId] = useState<number | null>(null);
   const [imagePreview, setImagePreview] = useState<string | null>(null);
   const [isPickingImage, setIsPickingImage] = useState(false);
+  const [imageExpanded, setImageExpanded] = useState(false);
 
   // Prompt & responses
   const [prompt, setPrompt] = useState("");
   const [isRunning, setIsRunning] = useState(false);
   const [comparison, setComparison] = useState<ComparisonResponse | null>(null);
-
+  const [runError, setRunError] = useState<string | null>(null);
+  
   // Adaptation selection
   const [adaptations, setAdaptations] = useState<UserAdaptation[]>([]);
   const [selectedAdaptationId, setSelectedAdaptationId] = useState<number | null>(null);
@@ -112,6 +114,7 @@ export default function ComparePage() {
       setComparison(result);
     } catch (e) {
       console.error(e);
+      setRunError(e instanceof Error ? e.message : "Comparison failed");
     } finally {
       setIsRunning(false);
     }
@@ -171,10 +174,11 @@ export default function ComparePage() {
               <label className="text-sm font-medium mb-2 block">Image</label>
               {imagePreview ? (
                 <div className="flex items-center gap-3">
-                  <img
+                   <img
                     src={imagePreview}
                     alt="Selected"
-                    className="h-16 w-16 object-cover rounded-lg border"
+                    className="h-40 w-40 object-contain bg-muted rounded-lg border cursor-zoom-in hover:border-primary transition-colors"
+                    onClick={() => setImageExpanded(true)}
                   />
                   <div className="flex flex-col gap-1">
                     <span className="text-sm text-muted-foreground">Image #{imageId}</span>
@@ -257,6 +261,12 @@ export default function ComparePage() {
             </div>
           </div>
         </Card>
+
+        {runError && (
+          <Card className="p-4 border-destructive text-destructive text-sm">
+            {runError}
+          </Card>
+        )}
 
         {/* Results - side by side */}
         {(comparison || isRunning) && (
@@ -472,6 +482,29 @@ export default function ComparePage() {
           </div>
         )}
       </div>
+      {imageExpanded && imagePreview && (
+        <div
+          className="fixed inset-0 z-50 bg-black/80 flex items-start justify-center p-4 overflow-y-auto"
+          onClick={() => setImageExpanded(false)}
+        >
+          <div
+            className="relative max-w-6xl w-full"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <button
+              onClick={() => setImageExpanded(false)}
+              className="absolute top-2 right-2 bg-white/10 hover:bg-white/20 text-white rounded-full p-2"
+            >
+              <X className="h-5 w-5" />
+            </button>
+            <img
+              src={imagePreview}
+              alt={`Image #${imageId}`}
+              className="w-full h-auto rounded-lg"
+            />
+          </div>
+        </div>
+      )}
     </main>
   );
 }

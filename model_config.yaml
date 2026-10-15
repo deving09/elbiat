@@ -1,0 +1,14 @@
+models:
+  - name: base
+    type: base
+    base_model: OpenGVLab/InternVL2_5-2B
+
+  - name: feedback-lora
+    type: full
+    base_model: OpenGVLab/InternVL2_5-2B
+    checkpoint: checkpoints/feedback_refined_v1_vision_lora_10ep
+
+  - name: dpo-v1
+    type: lora
+    base_model: OpenGVLab/InternVL2_5-2B
+    checkpoint: checkpoints/dpo_v1

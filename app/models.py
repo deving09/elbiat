@@ -22,8 +22,6 @@ class UserRole(str, enum.Enum):
     ENTERPRISE = "enterprise"
     ADMIN = "admin"
 
-
-
 class User(Base):
     __tablename__ = "users"
 
@@ -652,6 +650,7 @@ class AdaptationLevel(str, enum.Enum):
     RAG = "rag"
     SOFT_PROMPT = "soft_prompt"
     LORA = "lora"
+    FULL = "full"
 
 class AdaptationStatus(str, enum.Enum):
     PENDING = "pending"
@@ -673,9 +672,15 @@ class UserAdaptation(Base):
         nullable=False, index=True
     )
     
-    level: Mapped[AdaptationLevel] = mapped_column(Enum(AdaptationLevel), nullable=False)
+    level: Mapped[AdaptationLevel] = mapped_column(
+        Enum(AdaptationLevel, name="adaptationlevel",
+             values_callable=lambda e: [m.value for m in e]),
+        nullable=False,
+    )
     status: Mapped[AdaptationStatus] = mapped_column(
-        Enum(AdaptationStatus), default=AdaptationStatus.PENDING
+        Enum(AdaptationStatus, name="adaptationstatus",
+             values_callable=lambda e: [m.value for m in e]),
+        nullable=False, default=AdaptationStatus.PENDING,
     )
     
     # Where artifacts live (soft prompts, LoRA weights)

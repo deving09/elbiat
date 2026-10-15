@@ -18,7 +18,7 @@ import time
 
 # ---- Config ----
 MODEL_BASE = os.environ.get("MODEL_BASE", "http://127.0.0.1:9000").rstrip("/")
-DEFAULT_MODEL_ROUTE = "chat/internvl2_5_2b"  # matches your Gradio config
+DEFAULT_MODEL = "base"
 
 
 
@@ -58,12 +58,16 @@ async def chat_proxy(
     Proxies chat requests to the model service.
     Logs all queries and responses to query_logs table.
     """
-    upstream_url = f"{MODEL_BASE}/{DEFAULT_MODEL_ROUTE}"
+    #upstream_url = f"{MODEL_BASE}/{DEFAULT_MODEL_ROUTE}"
     headers: Dict[str, str] = {"Content-Type": "application/json"}
     if authorization:
         headers["Authorization"] = authorization
     
     params = dict(request.query_params)
+    model = params.pop("model", DEFAULT_MODEL)  # extract and remove if present
+    upstream_url = f"{MODEL_BASE}/chat"
+
+
     payload = body.model_dump(exclude_none=True)
     timeout = httpx.Timeout(connect=10.0, read=None, write=30.0, pool=10.0)
     
@@ -75,7 +79,7 @@ async def chat_proxy(
                 "POST",
                 upstream_url,
                 headers=headers,
-                params=params,
+                params={"model": model, **params},
                 json=payload,
             ) as resp:
                 if resp.status_code >= 400:

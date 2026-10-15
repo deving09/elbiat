@@ -18,6 +18,9 @@ import {
   ChevronDown,
   HelpCircle,
   MessageCircleQuestion,
+  GitCompare,
+  TrendingUp,
+  FileSearch,
 } from "lucide-react";
 import { useState, useRef, useEffect } from "react";
 
@@ -35,18 +38,31 @@ const chatSubmenu = [
   { name: "Answer", href: "/answer", icon: MessageCircleQuestion },
 ];
 
+const learningsSubmenu = [
+  { name: "Compare", href: "/compare", icon: GitCompare },
+  { name: "Impact", href: "/impact", icon: TrendingUp },
+  { name: "Samples", href: "/samples", icon: FileSearch },
+];
+
+
+
 export function Navbar() {
   const pathname = usePathname();
   const { user, logout, isAuthenticated } = useAuth();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [chatMenuOpen, setChatMenuOpen] = useState(false);
   const chatMenuRef = useRef<HTMLDivElement>(null);
+  const [learningsMenuOpen, setLearningsMenuOpen] = useState(false);
+  const learningsMenuRef = useRef<HTMLDivElement>(null);
 
   // Close chat dropdown when clicking outside
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
       if (chatMenuRef.current && !chatMenuRef.current.contains(e.target as Node)) {
         setChatMenuOpen(false);
+      }
+      if (learningsMenuRef.current && !learningsMenuRef.current.contains(e.target as Node)) {
+        setLearningsMenuOpen(false);
       }
     };
     document.addEventListener("mousedown", handleClickOutside);
@@ -111,6 +127,42 @@ export function Navbar() {
                         pathname === item.href && "bg-muted text-primary"
                       )}
                       onClick={() => setChatMenuOpen(false)}
+                    >
+                      <item.icon className="h-4 w-4" />
+                      <span>{item.name}</span>
+                    </Link>
+                  ))}
+                </div>
+              )}
+            </div>
+
+             {/* Learnings dropdown */}
+            <div className="relative" ref={learningsMenuRef}>
+              <button
+                className={cn(
+                  "flex items-center space-x-2 rounded-md px-3 py-2 text-sm font-medium transition-colors",
+                  pathname.startsWith("/compare") || pathname.startsWith("/impact") || pathname.startsWith("/samples")
+                    ? "bg-primary/10 text-primary"
+                    : "text-muted-foreground hover:bg-accent hover:text-accent-foreground"
+                )}
+                onClick={() => setLearningsMenuOpen(!learningsMenuOpen)}
+              >
+                <TrendingUp className="h-4 w-4" />
+                <span>Learnings</span>
+                <ChevronDown className={cn("h-3 w-3 transition-transform", learningsMenuOpen && "rotate-180")} />
+              </button>
+
+              {learningsMenuOpen && (
+                <div className="absolute top-full left-0 mt-1 bg-popover border rounded-lg shadow-lg py-1 min-w-[140px] z-50">
+                  {learningsSubmenu.map((item) => (
+                    <Link
+                      key={item.name}
+                      href={item.href}
+                      className={cn(
+                        "flex items-center space-x-2 px-3 py-2 text-sm hover:bg-muted",
+                        pathname === item.href && "bg-muted text-primary"
+                      )}
+                      onClick={() => setLearningsMenuOpen(false)}
                     >
                       <item.icon className="h-4 w-4" />
                       <span>{item.name}</span>
@@ -191,6 +243,24 @@ export function Navbar() {
 
             {/* Chat submenu items */}
             {chatSubmenu.map((item) => (
+              <Link
+                key={item.name}
+                href={item.href}
+                className={cn(
+                  "flex items-center space-x-3 rounded-md px-3 py-2 text-base font-medium",
+                  pathname === item.href
+                    ? "bg-primary/10 text-primary"
+                    : "text-muted-foreground hover:bg-accent"
+                )}
+                onClick={() => setMobileMenuOpen(false)}
+              >
+                <item.icon className="h-5 w-5" />
+                <span>{item.name}</span>
+              </Link>
+            ))}
+
+            {/* Learnings submenu items */}
+            {learningsSubmenu.map((item) => (
               <Link
                 key={item.name}
                 href={item.href}

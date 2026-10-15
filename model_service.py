@@ -1,27 +1,76 @@
+"""
+Multi-model VLM service supporting base, LoRA, VPT, and full fine-tuned models.
+
+Config via MODEL_CONFIG env var pointing to a YAML file, or individual env vars.
+"""
+
 import os
 import io
+import yaml
 import requests
-from typing import Any, Optional
+from typing import Any, Optional, Dict
+from pathlib import Path
 import math
+import gc
 
 import torch
 import torchvision.transforms as T
 from PIL import Image
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Query
 from pydantic import BaseModel
 from transformers import AutoModel, AutoTokenizer
 from torchvision.transforms.functional import InterpolationMode
 
+import sys
+INTERNVL_CHAT_DIR = os.environ.get(
+    "INTERNVL_CHAT_DIR",
+    "/home/ubuntu/workspace/elbiat/external/InternVL/internvl_chat",
+)
+sys.path.insert(0, INTERNVL_CHAT_DIR)
+from internvl.model.internvl_chat import InternVLChatModel
+
 import threading
 
+# ─────────────────────────────────────────────────────────────────────────────
+# Config
+# ─────────────────────────────────────────────────────────────────────────────
 
 DATA_BASE = os.environ.get("DATA_BASE", "http://127.0.0.1:8000").rstrip("/")
-MODEL_NAME = os.environ.get("INTERNVL_MODEL", "OpenGVLab/InternVL2_5-2B")
+MODEL_CONFIG = os.environ.get("MODEL_CONFIG", None)
+DEFAULT_MODEL = os.environ.get("DEFAULT_MODEL", "base")
 
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 DTYPE = torch.bfloat16 if DEVICE == "cuda" else torch.float32
 
-app = FastAPI(title="Model Service (InternVL2.5-2B)")
+app = FastAPI(title="Multi-Model VLM Service")
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Model Registry
+# ─────────────────────────────────────────────────────────────────────────────
+
+class ModelEntry:
+    def __init__(self, name: str, model: Any, tokenizer: Any, model_type: str, base_model: str, checkpoint: str = None):
+        self.name = name
+        self.model = model
+        self.tokenizer = tokenizer
+        self.model_type = model_type  # "base", "lora", "vpt", "full"
+        self.base_model = base_model
+        self.checkpoint = checkpoint
+        self.lock = threading.Lock()
+
+    def to_dict(self):
+        return {
+            "name": self.name,
+            "model_type": self.model_type,
+            "base_model": self.base_model,
+            "checkpoint": self.checkpoint,
+            "status": "ready",
+        }
+
+
+model_registry: Dict[str, ModelEntry] = {}
+
 
 
 # ---- preprocessing (official-style) ----
@@ -143,34 +192,189 @@ def _split_model(model_name):
 
 
 
+# ─────────────────────────────────────────────────────────────────────────────
+# Model Loading
+# ─────────────────────────────────────────────────────────────────────────────
+
+def find_best_checkpoint(checkpoint_path: str) -> str:
+    """Find best subfolder (best > final > latest epoch > root)."""
+    p = Path(checkpoint_path)
+    if not p.exists():
+        return checkpoint_path
+    if (p / "best").exists():
+        return str(p / "best")
+    if (p / "final").exists():
+        return str(p / "final")
+    epoch_folders = sorted(
+        [f for f in p.iterdir() if f.is_dir() and f.name.startswith("epoch_")],
+        key=lambda x: int(x.name.split("_")[-1]) if x.name.split("_")[-1].isdigit() else 0,
+        reverse=True
+    )
+    if epoch_folders:
+        return str(epoch_folders[0])
+    return checkpoint_path
 
 
 
-# ---- load model once ----
-model = None
-tokenizer = None
-gpu_lock = threading.Lock()
 
 
 
-@app.on_event("startup")
-def load_model():
-    global model, tokenizer, gpu_lock
-    world_size = torch.cuda.device_count()
-    device_map = _split_model(MODEL_NAME)
+def is_lora_checkpoint(path: str) -> bool:
+    return (Path(path) / "adapter_config.json").exists()
+
+
+def load_base_model(base_model_name: str):
+    """Load a base HuggingFace model."""
+    device_map = _split_model(base_model_name)
     model = AutoModel.from_pretrained(
-        MODEL_NAME,
+        base_model_name,
         torch_dtype=DTYPE if DEVICE == "cuda" else torch.float32,
         low_cpu_mem_usage=True,
         use_flash_attn=True,
         trust_remote_code=True,
         device_map=device_map
     ).eval()
+    if DEVICE == "cuda" and device_map == "auto":
+        model = model.cuda()
+    tokenizer = AutoTokenizer.from_pretrained(base_model_name, trust_remote_code=True, use_fast=False)
+    return model, tokenizer
+
+
+def load_lora_model(base_model_name: str, lora_path: str):
+    """Load base model with LoRA adapter merged."""
+    from peft import PeftModel
+    
+    checkpoint = find_best_checkpoint(lora_path)
+    print(f"  Loading LoRA from: {checkpoint}")
+    
+    device_map = _split_model(base_model_name)
+    base_model = AutoModel.from_pretrained(
+        base_model_name,
+        torch_dtype=DTYPE if DEVICE == "cuda" else torch.float32,
+        low_cpu_mem_usage=True,
+        use_flash_attn=True,
+        trust_remote_code=True,
+        device_map=device_map
+    )
+    
+    # Adapter was trained on the LLM alone (keys: base_model.model.model.layers...),
+    # so attach it to .language_model, not the whole VLM, just like the eval code
+    base_model.language_model = PeftModel.from_pretrained(base_model.language_model, checkpoint)
+    base_model.language_model = base_model.language_model.merge_and_unload()
+    model = base_model.eval()
+    
+    if DEVICE == "cuda" and device_map == "auto":
+        model = model.cuda()
+    
+    tokenizer = AutoTokenizer.from_pretrained(base_model_name, trust_remote_code=True, use_fast=False)
+    return model, tokenizer, checkpoint
+
+
+def load_full_model(model_path: str, base_model_name: str):
+    """Load a fully fine-tuned model."""
+    checkpoint = find_best_checkpoint(model_path)
+    print(f"  Loading full model from: {checkpoint}")
+    
+    device_map = _split_model(base_model_name)
+
+    model = InternVLChatModel.from_pretrained(
+        checkpoint,
+        torch_dtype=DTYPE if DEVICE == "cuda" else torch.float32,
+        low_cpu_mem_usage=True,
+    ).eval()
+    
     if DEVICE == "cuda":
         model = model.cuda()
-        #gpu_lock = torch.cuda.Lock()
-    tokenizer = AutoTokenizer.from_pretrained(MODEL_NAME, trust_remote_code=True, use_fast=False)
+    
+    tokenizer = AutoTokenizer.from_pretrained(checkpoint, trust_remote_code=True, use_fast=False)
+    return model, tokenizer, checkpoint
 
+
+def load_model_config() -> dict:
+    """Load model configuration from YAML or env vars."""
+    if MODEL_CONFIG and Path(MODEL_CONFIG).exists():
+        with open(MODEL_CONFIG) as f:
+            return yaml.safe_load(f)
+    
+    # Default: just load base model from env
+    base = os.environ.get("INTERNVL_MODEL", "OpenGVLab/InternVL2_5-2B")
+    config = {"models": [{"name": "base", "type": "base", "base_model": base}]}
+    
+    # Check for additional models via env vars
+    # LORA_MODELS="name1:path1,name2:path2"
+    lora_models = os.environ.get("LORA_MODELS", "")
+    if lora_models:
+        for entry in lora_models.split(","):
+            if ":" in entry:
+                name, path = entry.split(":", 1)
+                config["models"].append({
+                    "name": name.strip(),
+                    "type": "lora",
+                    "base_model": base,
+                    "checkpoint": path.strip(),
+                })
+    
+    return config
+
+
+@app.on_event("startup")
+def load_models():
+    """Load all configured models at startup."""
+    global model_registry
+    
+    config = load_model_config()
+    print(f"Loading {len(config['models'])} model(s)...")
+    
+    for model_cfg in config["models"]:
+        name = model_cfg["name"]
+        model_type = model_cfg.get("type", "base")
+        base_model = model_cfg.get("base_model", "OpenGVLab/InternVL2_5-2B")
+        checkpoint = model_cfg.get("checkpoint")
+        
+        print(f"\nLoading '{name}' ({model_type})...")
+        
+        try:
+            if model_type == "base":
+                model, tokenizer = load_base_model(base_model)
+                entry = ModelEntry(name, model, tokenizer, model_type, base_model)
+            
+            elif model_type == "lora":
+                model, tokenizer, ckpt = load_lora_model(base_model, checkpoint)
+                entry = ModelEntry(name, model, tokenizer, model_type, base_model, ckpt)
+            
+            elif model_type == "full":
+                model, tokenizer, ckpt = load_full_model(checkpoint, base_model)
+                entry = ModelEntry(name, model, tokenizer, model_type, base_model, ckpt)
+            
+            else:
+                print(f"  Unknown model type: {model_type}, skipping")
+                continue
+            
+            model_registry[name] = entry
+            print(f"  ✓ Loaded '{name}'")
+            
+        except Exception as e:
+            print(f"  ✗ Failed to load '{name}': {e}")
+
+    if "base" in model_registry and "dpo-v1" in model_registry:
+        wb = model_registry["base"].model.language_model.model.layers[0].attention.wo.weight
+        wd = model_registry["dpo-v1"].model.language_model.model.layers[0].attention.wo.weight
+        print("[check] base vs dpo-v1 layer0 wo max diff:", (wb.float() - wd.float()).abs().max().item())
+     
+    print(f"\n{len(model_registry)} model(s) ready")
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# API
+# ─────────────────────────────────────────────────────────────────────────────
+
+@app.get("/models")
+def list_models():
+    """List all available models."""
+    return {
+        "default": DEFAULT_MODEL,
+        "models": [entry.to_dict() for entry in model_registry.values()]
+    }
 
 
 class ChatReq(BaseModel):
@@ -182,18 +386,29 @@ class ChatReq(BaseModel):
     max_num_tiles: int = 12
     return_history: bool = True
 
-@app.post("/chat/internvl2_5_2b")
-def chat(req: ChatReq):
-    if model is None or tokenizer is None:
-        raise HTTPException(status_code=503, detail="model not loaded")
 
+@app.post("/chat")
+def chat(
+    req: ChatReq,
+    model: str = Query(default=None, description="Model name to use (default: base)")
+):
+    """Run chat inference with specified model."""
+    model_name = model or DEFAULT_MODEL
+    
+    if model_name not in model_registry:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Model '{model_name}' not found. Available: {list(model_registry.keys())}"
+        )
+    
+    entry = model_registry[model_name]
+    
     pixel_values = None
     if req.image_id is not None:
-        # fetch image bytes from data service
         url = f"{DATA_BASE}/images/{req.image_id}/file"
         r = requests.get(url, timeout=30)
         if not r.ok:
-            raise HTTPException(status_code=404, detail=f"image_id {req.image_id} not found in data service")
+            raise HTTPException(status_code=404, detail=f"image_id {req.image_id} not found")
         pixel_values = image_bytes_to_tensor(r.content, max_num=req.max_num_tiles)
         if DEVICE == "cuda":
             pixel_values = pixel_values.to(DTYPE).cuda()
@@ -201,15 +416,18 @@ def chat(req: ChatReq):
     gen_cfg = {"max_new_tokens": req.max_new_tokens, "do_sample": req.do_sample}
 
     with torch.no_grad():
-        if DEVICE == "cuda":
-            with gpu_lock:
-                out = model.chat(tokenizer, pixel_values, req.prompt, gen_cfg,
-                                 history=req.history, return_history=req.return_history)
-        else:
-            out = model.chat(tokenizer, pixel_values, req.prompt, gen_cfg,
-                             history=req.history, return_history=req.return_history)
+        with entry.lock:
+            out = entry.model.chat(
+                entry.tokenizer, pixel_values, req.prompt, gen_cfg,
+                history=req.history, return_history=req.return_history
+            )
 
     if req.return_history:
         response, history = out
-        return {"model": MODEL_NAME, "response": response, "history": history}
-    return {"model": MODEL_NAME, "response": out}
+        return {"model": model_name, "response": response, "history": history}
+    return {"model": model_name, "response": out}
+
+
+@app.get("/health")
+def health():
+    return {"status": "healthy", "models_loaded": len(model_registry)}
